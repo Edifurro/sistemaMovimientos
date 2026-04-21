@@ -1,0 +1,503 @@
+================================================================================
+GUÍA MANUAL: LLENAR FIRESTORE PASO A PASO
+================================================================================
+
+ACCESO A FIREBASE:
+1. Ir a: https://console.firebase.google.com
+2. Seleccionar proyecto: "Inventario Taller"
+3. Click en "Firestore Database"
+
+
+================================================================================
+PASO 1: CREAR COLECCIÓN "usuarios"
+================================================================================
+
+PARTE A: Crear la colección
+──────────────────────────
+
+1. Click en botón "+ Crear colección"
+2. Escribir nombre: usuarios
+3. Click "Siguiente"
+
+PARTE B: Agregar primer documento (Encargado)
+─────────────────────────────────────────────
+
+Firestore te pide:
+  ☐ "ID del documento"
+  ☐ "Campos"
+
+En "ID del documento":
+  - Dejar en blanco o escribir: encargado1
+  - Click "Guardar"
+
+Aparecerá una ventana para agregar campos:
+
+Click "Agregar campo":
+
+CAMPO 1: nombre
+  Nombre: nombre
+  Tipo: String
+  Valor: Juan Pérez
+  Click ✓
+
+CAMPO 2: email
+  Nombre: email
+  Tipo: String
+  Valor: juan@taller.com
+  Click ✓
+
+CAMPO 3: activo
+  Nombre: activo
+  Tipo: Boolean
+  Valor: true (marcar checkbox)
+  Click ✓
+
+CAMPO 4: rol
+  Nombre: rol
+  Tipo: String
+  Valor: ADMIN
+  Click ✓
+
+CAMPO 5: fechaCreacion
+  Nombre: fechaCreacion
+  Tipo: Timestamp
+  Valor: Click en reloj 🕐
+    → Seleccionar: 2026-04-16
+    → Seleccionar hora: 10:00 AM
+    → Click "Actualizar"
+  Click ✓
+
+RESULTADO ESPERADO en Firestore:
+┌─────────────────────────────────┐
+│ usuarios/encargado1             │
+├─────────────────────────────────┤
+│ • nombre: "Juan Pérez"          │
+│ • email: "juan@taller.com"      │
+│ • activo: true                  │
+│ • rol: "ADMIN"                  │
+│ • fechaCreacion: Apr 16, 2026   │
+└─────────────────────────────────┘
+
+
+================================================================================
+PASO 2: CREAR COLECCIÓN "colaboradores"
+================================================================================
+
+PARTE A: Crear la colección
+──────────────────────────
+
+1. En el panel izquierdo, click "+ Crear colección"
+2. Escribir: colaboradores
+3. Click "Siguiente"
+
+PARTE B: Agregar 7 colaboradores
+────────────────────────────────
+
+Para CADA colaborador, crear un documento:
+
+──────────────────────────────────────────────────────────────────────────────
+COLABORADOR 1: Carlos García
+──────────────────────────────────────────────────────────────────────────────
+
+ID del documento: col_001
+
+CAMPOS:
+  • codigoEmpleado (String): E001
+  • nombre (String): Carlos García
+  • cargo (String): Soldador
+  • departamento (String): Soldadura
+  • telefono (String): 555-0001
+  • activo (Boolean): true ☑
+  • fechaCreacion (Timestamp): 2026-04-01 08:00 AM
+
+──────────────────────────────────────────────────────────────────────────────
+COLABORADOR 2: Miguel López
+──────────────────────────────────────────────────────────────────────────────
+
+ID: col_002
+
+CAMPOS:
+  • codigoEmpleado (String): E002
+  • nombre (String): Miguel López
+  • cargo (String): Cortador
+  • departamento (String): Corte
+  • telefono (String): 555-0002
+  • activo (Boolean): true ☑
+  • fechaCreacion (Timestamp): 2026-04-01 08:00 AM
+
+──────────────────────────────────────────────────────────────────────────────
+COLABORADOR 3: Pedro Rodríguez
+──────────────────────────────────────────────────────────────────────────────
+
+ID: col_003
+
+CAMPOS:
+  • codigoEmpleado (String): E003
+  • nombre (String): Pedro Rodríguez
+  • cargo (String): Pulidor
+  • departamento (String): Acabado
+  • telefono (String): 555-0003
+  • activo (Boolean): true ☑
+  • fechaCreacion (Timestamp): 2026-04-01 08:00 AM
+
+──────────────────────────────────────────────────────────────────────────────
+COLABORADOR 4: Antonio Martínez
+──────────────────────────────────────────────────────────────────────────────
+
+ID: col_004
+
+CAMPOS:
+  • codigoEmpleado (String): E004
+  • nombre (String): Antonio Martínez
+  • cargo (String): Soldador
+  • departamento (String): Soldadura
+  • telefono (String): 555-0004
+  • activo (Boolean): true ☑
+  • fechaCreacion (Timestamp): 2026-04-01 08:00 AM
+
+──────────────────────────────────────────────────────────────────────────────
+COLABORADOR 5: Luis González
+──────────────────────────────────────────────────────────────────────────────
+
+ID: col_005
+
+CAMPOS:
+  • codigoEmpleado (String): E005
+  • nombre (String): Luis González
+  • cargo (String): Ayudante
+  • departamento (String): General
+  • telefono (String): 555-0005
+  • activo (Boolean): true ☑
+  • fechaCreacion (Timestamp): 2026-04-01 08:00 AM
+
+──────────────────────────────────────────────────────────────────────────────
+COLABORADOR 6: Roberto Sánchez
+──────────────────────────────────────────────────────────────────────────────
+
+ID: col_006
+
+CAMPOS:
+  • codigoEmpleado (String): E006
+  • nombre (String): Roberto Sánchez
+  • cargo (String): Cortador
+  • departamento (String): Corte
+  • telefono (String): 555-0006
+  • activo (Boolean): true ☑
+  • fechaCreacion (Timestamp): 2026-04-01 08:00 AM
+
+──────────────────────────────────────────────────────────────────────────────
+COLABORADOR 7: Fernando Díaz
+──────────────────────────────────────────────────────────────────────────────
+
+ID: col_007
+
+CAMPOS:
+  • codigoEmpleado (String): E007
+  • nombre (String): Fernando Díaz
+  • cargo (String): Soldador
+  • departamento (String): Soldadura
+  • telefono (String): 555-0007
+  • activo (Boolean): true ☑
+  • fechaCreacion (Timestamp): 2026-04-01 08:00 AM
+
+──────────────────────────────────────────────────────────────────────────────
+
+CÓMO AGREGAR MÚLTIPLES DOCUMENTOS:
+  1. Después de crear col_001, click "+Agregar documento"
+  2. Repetir para col_002, col_003, ... col_007
+
+
+================================================================================
+PASO 3: CREAR COLECCIÓN "productos"
+================================================================================
+
+PARTE A: Crear la colección
+──────────────────────────
+
+1. Click "+ Crear colección"
+2. Escribir: productos
+3. Click "Siguiente"
+
+PARTE B: Agregar productos
+─────────────────────────
+
+IMPORTANTE: 
+  - RECURSOS: Se pueden prestar múltiples del mismo
+  - HERRAMIENTAS: Solo 1 unidad por colaborador a la vez
+
+──────────────────────────────────────────────────────────────────────────────
+PRODUCTO 1: Lija #120 (RECURSO)
+──────────────────────────────────────────────────────────────────────────────
+
+ID: prod_001
+
+CAMPOS:
+  • codigoBarras (String): 5901234123457
+  • nombre (String): Lija #120
+  • descripcion (String): Lija para pulir - grano 120
+  • tipo (String): RECURSO
+  • cantidadTotal (Number): 50
+  • cantidadMinima (Number): 10
+  • fotos (Array): [] (vacío - click "Agregar elemento" NO hacer nada, solo guardar)
+  • activo (Boolean): true ☑
+  • fechaCreacion (Timestamp): 2026-04-01 09:00 AM
+  • fechaUltimaModificacion (Timestamp): 2026-04-01 09:00 AM
+
+──────────────────────────────────────────────────────────────────────────────
+PRODUCTO 2: Pintura Spray Roja (RECURSO)
+──────────────────────────────────────────────────────────────────────────────
+
+ID: prod_002
+
+CAMPOS:
+  • codigoBarras (String): 5901234123458
+  • nombre (String): Pintura Spray Roja
+  • descripcion (String): Aerosol pintura roja brillante - 400ml
+  • tipo (String): RECURSO
+  • cantidadTotal (Number): 30
+  • cantidadMinima (Number): 5
+  • fotos (Array): []
+  • activo (Boolean): true ☑
+  • fechaCreacion (Timestamp): 2026-04-01 09:00 AM
+  • fechaUltimaModificacion (Timestamp): 2026-04-01 09:00 AM
+
+──────────────────────────────────────────────────────────────────────────────
+PRODUCTO 3: Soldadora MIG (HERRAMIENTA)
+──────────────────────────────────────────────────────────────────────────────
+
+ID: prod_003
+
+CAMPOS:
+  • codigoBarras (String): 5901234123459
+  • nombre (String): Soldadora MIG
+  • descripcion (String): Máquina soldadora MIG 200A
+  • tipo (String): HERRAMIENTA
+  • cantidadTotal (Number): 2
+  • cantidadMinima (Number): 1
+  • fotos (Array): []
+  • activo (Boolean): true ☑
+  • fechaCreacion (Timestamp): 2026-04-01 09:00 AM
+  • fechaUltimaModificacion (Timestamp): 2026-04-01 09:00 AM
+
+──────────────────────────────────────────────────────────────────────────────
+PRODUCTO 4: Taladro Eléctrico (HERRAMIENTA)
+──────────────────────────────────────────────────────────────────────────────
+
+ID: prod_004
+
+CAMPOS:
+  • codigoBarras (String): 5901234123460
+  • nombre (String): Taladro Eléctrico
+  • descripcion (String): Taladro industrial 1000W
+  • tipo (String): HERRAMIENTA
+  • cantidadTotal (Number): 3
+  • cantidadMinima (Number): 1
+  • fotos (Array): []
+  • activo (Boolean): true ☑
+  • fechaCreacion (Timestamp): 2026-04-01 09:00 AM
+  • fechaUltimaModificacion (Timestamp): 2026-04-01 09:00 AM
+
+──────────────────────────────────────────────────────────────────────────────
+PRODUCTO 5: Tiner (RECURSO)
+──────────────────────────────────────────────────────────────────────────────
+
+ID: prod_005
+
+CAMPOS:
+  • codigoBarras (String): 5901234123461
+  • nombre (String): Tiner
+  • descripcion (String): Disolvente industrial - galón
+  • tipo (String): RECURSO
+  • cantidadTotal (Number): 20
+  • cantidadMinima (Number): 2
+  • fotos (Array): []
+  • activo (Boolean): true ☑
+  • fechaCreacion (Timestamp): 2026-04-01 09:00 AM
+  • fechaUltimaModificacion (Timestamp): 2026-04-01 09:00 AM
+
+──────────────────────────────────────────────────────────────────────────────
+PRODUCTO 6: Llave Inglesa 24" (HERRAMIENTA)
+──────────────────────────────────────────────────────────────────────────────
+
+ID: prod_006
+
+CAMPOS:
+  • codigoBarras (String): 5901234123462
+  • nombre (String): Llave Inglesa 24"
+  • descripcion (String): Llave ajustable profesional
+  • tipo (String): HERRAMIENTA
+  • cantidadTotal (Number): 5
+  • cantidadMinima (Number): 1
+  • fotos (Array): []
+  • activo (Boolean): true ☑
+  • fechaCreacion (Timestamp): 2026-04-01 09:00 AM
+  • fechaUltimaModificacion (Timestamp): 2026-04-01 09:00 AM
+
+──────────────────────────────────────────────────────────────────────────────
+PRODUCTO 7: Estopa (RECURSO)
+──────────────────────────────────────────────────────────────────────────────
+
+ID: prod_007
+
+CAMPOS:
+  • codigoBarras (String): 5901234123463
+  • nombre (String): Estopa
+  • descripcion (String): Estopa de algodón para limpiar
+  • tipo (String): RECURSO
+  • cantidadTotal (Number): 100
+  • cantidadMinima (Number): 20
+  • fotos (Array): []
+  • activo (Boolean): true ☑
+  • fechaCreacion (Timestamp): 2026-04-01 09:00 AM
+  • fechaUltimaModificacion (Timestamp): 2026-04-01 09:00 AM
+
+──────────────────────────────────────────────────────────────────────────────
+
+
+================================================================================
+PASO 4: CREAR COLECCIÓN "prestamos" (VACÍA)
+================================================================================
+
+1. Click "+ Crear colección"
+2. Escribir: prestamos
+3. Click "Siguiente"
+4. Desmarcar "Agregar datos a este documento"
+5. Click "Crear"
+
+RESULTADO: Colección prestamos vacía (se llenará cuando se registren préstamos)
+
+
+================================================================================
+GUÍA VISUAL: CÓMO AGREGAR CAMPOS EN FIREBASE CONSOLE
+================================================================================
+
+CUANDO VES ESTO:
+┌──────────────────────────────────────────────┐
+│ + Agregar campo                              │
+└──────────────────────────────────────────────┘
+
+1. Click en "+ Agregar campo"
+
+APARECERÁ:
+┌──────────────────────────────────────────────┐
+│ Nombre del campo: [_____________]            │
+│                                              │
+│ Tipo de dato:    [Seleccionar ▼]            │
+│                                              │
+│ Valor:           [_____________]            │
+│                                              │
+│              [✓ Guardar]  [✗ Cancelar]      │
+└──────────────────────────────────────────────┘
+
+2. Completar:
+   - Nombre del campo: (ej: "nombre")
+   - Tipo de dato: (ej: "String")
+   - Valor: (ej: "Juan Pérez")
+
+3. Click "Guardar"
+
+
+TIPOS DE DATO DISPONIBLES:
+
+┌─────────────────┬──────────────────────────────────┐
+│ TIPO            │ DESCRIPCIÓN                      │
+├─────────────────┼──────────────────────────────────┤
+│ String          │ Texto: "Juan", "Lija #120"      │
+│ Number          │ Números: 50, 3, 2.5             │
+│ Boolean         │ Verdadero/Falso: ☑ true/☐ false│
+│ Timestamp       │ Fecha/Hora: Click reloj 🕐      │
+│ Reference       │ Vínculo: usuarios/encargado1    │
+│ Array           │ Lista: ["item1", "item2"]       │
+│ Map             │ Objeto: {clave: valor}          │
+│ Null            │ Vacío                           │
+└─────────────────┴──────────────────────────────────┘
+
+
+================================================================================
+CÓMO TRABAJAR CON TIPOS ESPECIALES
+================================================================================
+
+TIMESTAMP (Fecha y Hora):
+  1. Click en tipo "Timestamp"
+  2. Se abre un selector de fecha/hora
+  3. Selecciona: Día (ej: 16), Mes (ej: Abril), Año (ej: 2026)
+  4. Selecciona hora: 09:00 AM
+  5. Click "Actualizar"
+
+ARRAY (Lista):
+  1. Click en tipo "Array"
+  2. Se abre ventana para agregar elementos
+  3. Para vacío: dejar sin elementos y guardar
+  4. Para con elementos:
+     - Click "+ Agregar elemento"
+     - Escribir valor: "E001"
+     - Click ✓
+     - Repetir para más elementos
+
+REFERENCE (Referencia):
+  1. Click en tipo "Reference"
+  2. Escribir el path completo: colaboradores/col_001
+  3. Guardar
+
+BOOLEAN (Verdadero/Falso):
+  1. Click en tipo "Boolean"
+  2. Marcar ☑ para true
+  3. Desmarcar ☐ para false
+  4. Guardar
+
+
+================================================================================
+VERIFICACIÓN: CHECKLIST FINAL
+================================================================================
+
+ANTES DE EMPEZAR CON EL CÓDIGO, VERIFICA:
+
+COLECCIÓN "usuarios":
+  ☐ Documento "encargado1" existe
+  ☐ Tiene campos: nombre, email, activo, rol, fechaCreacion
+  ☐ activo = true
+  ☐ rol = "ADMIN"
+
+COLECCIÓN "colaboradores":
+  ☐ 7 documentos: col_001 hasta col_007
+  ☐ Cada uno tiene: codigoEmpleado, nombre, cargo, departamento, telefono, activo, fechaCreacion
+  ☐ codigoEmpleado son: E001, E002, ..., E007
+  ☐ Todos tienen activo = true
+
+COLECCIÓN "productos":
+  ☐ 7 documentos: prod_001 hasta prod_007
+  ☐ Cada uno tiene: codigoBarras, nombre, descripcion, tipo, cantidadTotal, cantidadMinima, fotos, activo, fechaCreacion, fechaUltimaModificacion
+  ☐ 4 RECURSOS: Lija, Pintura Spray, Tiner, Estopa
+  ☐ 3 HERRAMIENTAS: Soldadora, Taladro, Llave Inglesa
+  ☐ Todos tienen activo = true
+
+COLECCIÓN "prestamos":
+  ☐ Existe pero está vacía
+
+Si TODO está ✓: ¡Estás listo para programar!
+
+
+================================================================================
+PRÓXIMOS PASOS DESPUÉS DE LLENAR FIRESTORE
+================================================================================
+
+1. ☐ Descargar credenciales JSON desde Firebase
+   → Firebase Console → Configuración del proyecto → Cuentas de servicio
+   → Botón "Generar clave privada" (JSON)
+   → Guardar en tu proyecto como: serviceAccountKey.json
+
+2. ☐ Crear archivo .env con las credenciales
+
+3. ☐ Crear carpeta /src con estructura:
+   /src
+     /config
+     /controllers
+     /routes
+     /middlewares
+     /services
+
+4. ☐ Empezar a codificar Express.js
+
+¿Necesitas ayuda con alguno de estos pasos?
+
+================================================================================

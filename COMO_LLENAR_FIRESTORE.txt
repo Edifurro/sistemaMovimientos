@@ -1,0 +1,511 @@
+================================================================================
+CÓMO LLENAR LAS COLECCIONES EN FIRESTORE
+================================================================================
+
+OPCIÓN 1: MANUAL DESDE FIREBASE CONSOLE (Rápido para MVP)
+OPCIÓN 2: SCRIPT NODE.JS (Automatizado, profesional)
+OPCIÓN 3: IMPORT JSON (Para datos en lote)
+
+
+================================================================================
+OPCIÓN 1: LLENAR MANUALMENTE VÍA FIREBASE CONSOLE
+================================================================================
+
+Pasos generales:
+1. Ir a Firebase Console → Firestore Database
+2. Click en "Crear colección" o "Agregar documento"
+3. Especificar campos y valores
+
+DETALLADO POR COLECCIÓN:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PASO 1: CREAR COLECCIÓN "usuarios"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Click "Crear colección"
+2. Nombre: "usuarios"
+3. Click "Siguiente"
+4. Completar primer documento:
+   - ID documento: "encargado1" (o dejar que Firebase auto-genere)
+   - Campos:
+     • nombre (string) → "Juan Pérez"
+     • email (string) → "juan@taller.com"
+     • contraseña (string) → "Dejar vacío por ahora"
+     • activo (boolean) → true
+     • fechaCreacion (timestamp) → Click reloj, seleccionar fecha/hora
+     • rol (string) → "ADMIN"
+
+5. Click "Guardar"
+
+RESULTADO:
+  Colección: usuarios
+    └─ encargado1
+        ├─ nombre: "Juan Pérez"
+        ├─ email: "juan@taller.com"
+        ├─ contraseña: "" (vacío)
+        ├─ activo: true
+        ├─ fechaCreacion: 2026-04-16 10:00:00
+        └─ rol: "ADMIN"
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PASO 2: CREAR COLECCIÓN "colaboradores"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Click "Crear colección"
+2. Nombre: "colaboradores"
+3. Click "Siguiente"
+4. Agregar documentos (uno por cada colaborador):
+
+DOCUMENTO 1:
+  - ID: "col_001"
+  - Campos:
+    • codigoEmpleado (string) → "E001"
+    • nombre (string) → "Carlos García"
+    • cargo (string) → "Soldador"
+    • departamento (string) → "Soldadura"
+    • telefono (string) → "555-0001"
+    • activo (boolean) → true
+    • fechaCreacion (timestamp) → 2026-04-01 08:00:00
+
+DOCUMENTO 2:
+  - ID: "col_002"
+  - Campos:
+    • codigoEmpleado (string) → "E002"
+    • nombre (string) → "Miguel López"
+    • cargo (string) → "Cortador"
+    • departamento (string) → "Corte"
+    • telefono (string) → "555-0002"
+    • activo (boolean) → true
+    • fechaCreacion (timestamp) → 2026-04-01 08:00:00
+
+(Repetir para los ~7 colaboradores)
+
+RESULTADO:
+  Colección: colaboradores
+    ├─ col_001: {codigoEmpleado: "E001", nombre: "Carlos García", ...}
+    ├─ col_002: {codigoEmpleado: "E002", nombre: "Miguel López", ...}
+    ├─ col_003: {...}
+    └─ col_007: {...}
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PASO 3: CREAR COLECCIÓN "productos"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+DOCUMENTO 1: Lija #120
+  - ID: "prod_001"
+  - Campos:
+    • codigoBarras (string) → "5901234123457" (EAN-13)
+    • nombre (string) → "Lija #120"
+    • descripcion (string) → "Lija para pulir - grano 120"
+    • tipo (string) → "RECURSO"
+    • cantidadTotal (number) → 50
+    • cantidadMinima (number) → 10
+    • fotos (array) → [] (vacío)
+    • activo (boolean) → true
+    • fechaCreacion (timestamp) → 2026-04-01 09:00:00
+    • fechaUltimaModificacion (timestamp) → 2026-04-01 09:00:00
+
+DOCUMENTO 2: Pintura Spray Roja
+  - ID: "prod_002"
+  - Campos:
+    • codigoBarras (string) → "5901234123458"
+    • nombre (string) → "Pintura Spray Roja"
+    • descripcion (string) → "Aerosol pintura roja brillante - 400ml"
+    • tipo (string) → "RECURSO"
+    • cantidadTotal (number) → 30
+    • cantidadMinima (number) → 5
+    • fotos (array) → []
+    • activo (boolean) → true
+    • fechaCreacion (timestamp) → 2026-04-01 09:00:00
+    • fechaUltimaModificacion (timestamp) → 2026-04-01 09:00:00
+
+DOCUMENTO 3: Soldadora MIG
+  - ID: "prod_003"
+  - Campos:
+    • codigoBarras (string) → "5901234123459"
+    • nombre (string) → "Soldadora MIG"
+    • descripcion (string) → "Máquina soldadora MIG 200A"
+    • tipo (string) → "HERRAMIENTA"
+    • cantidadTotal (number) → 2
+    • cantidadMinima (number) → 1
+    • fotos (array) → []
+    • activo (boolean) → true
+    • fechaCreacion (timestamp) → 2026-04-01 09:00:00
+    • fechaUltimaModificacion (timestamp) → 2026-04-01 09:00:00
+
+DOCUMENTO 4: Taladro Eléctrico
+  - ID: "prod_004"
+  - Campos:
+    • codigoBarras (string) → "5901234123460"
+    • nombre (string) → "Taladro Eléctrico"
+    • descripcion (string) → "Taladro industrial 1000W"
+    • tipo (string) → "HERRAMIENTA"
+    • cantidadTotal (number) → 3
+    • cantidadMinima (number) → 1
+    • fotos (array) → []
+    • activo (boolean) → true
+    • fechaCreacion (timestamp) → 2026-04-01 09:00:00
+    • fechaUltimaModificacion (timestamp) → 2026-04-01 09:00:00
+
+(Agregar más productos según necesites)
+
+RESULTADO:
+  Colección: productos
+    ├─ prod_001: {codigoBarras: "5901234123457", nombre: "Lija #120", ...}
+    ├─ prod_002: {codigoBarras: "5901234123458", nombre: "Pintura Spray Roja", ...}
+    ├─ prod_003: {codigoBarras: "5901234123459", nombre: "Soldadora MIG", ...}
+    └─ prod_004: {codigoBarras: "5901234123460", nombre: "Taladro Eléctrico", ...}
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PASO 4: CREAR COLECCIÓN "prestamos" (al principio vacía)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Click "Crear colección"
+2. Nombre: "prestamos"
+3. Click "Siguiente"
+4. NO agregar documentos aún (se llenarán cuando se registren préstamos)
+   - O agregar un documento de prueba:
+     • ID: "prest_001"
+     • Campos:
+       - idColaborador (reference) → colaboradores/col_001
+       - estado (string) → "PENDIENTE"
+       - fechaSolicitud (timestamp) → 2026-04-16 10:30:00
+       - fechaDevolucionEsperada (timestamp) → 2026-04-16 17:00:00
+       - fechaDevolucionReal (timestamp) → null (dejar vacío)
+       - observaciones (string) → "Préstamo de prueba"
+       - usuarioRegistro (reference) → usuarios/encargado1
+       - turnoRegistro (string) → "Mañana"
+       - detalles (array) → [
+           {
+             idProducto: "prod_003",
+             cantidad: 1,
+             estado: "PENDIENTE"
+           }
+         ]
+
+
+================================================================================
+OPCIÓN 2: SCRIPT NODE.JS PARA POBLAR AUTOMÁTICAMENTE
+================================================================================
+
+Archivo: scripts/seed.js
+
+const admin = require('firebase-admin');
+require('dotenv').config();
+
+// Configurar Firebase
+const serviceAccount = {
+  projectId: process.env.FIREBASE_PROJECT_ID,
+  privateKeyId: process.env.FIREBASE_PRIVATE_KEY_ID,
+  privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+  clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+  clientId: process.env.FIREBASE_CLIENT_ID,
+  authUri: process.env.FIREBASE_AUTH_URI,
+  tokenUri: process.env.FIREBASE_TOKEN_URI,
+  authProviderCertUrl: process.env.FIREBASE_AUTH_PROVIDER_CERT_URL,
+  clientCertUrl: process.env.FIREBASE_CLIENT_CERT_URL,
+};
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+
+const db = admin.firestore();
+const auth = admin.auth();
+
+async function seed() {
+  try {
+    console.log('🌱 Iniciando seed...');
+
+    // PASO 1: Crear usuario
+    console.log('📝 Creando usuario...');
+    const userRecord = await auth.createUser({
+      email: 'juan@taller.com',
+      password: 'Taller123!',
+      displayName: 'Juan Pérez'
+    });
+    console.log('✅ Usuario creado:', userRecord.uid);
+
+    // Guardar en Firestore
+    await db.collection('usuarios').doc(userRecord.uid).set({
+      nombre: 'Juan Pérez',
+      email: 'juan@taller.com',
+      activo: true,
+      rol: 'ADMIN',
+      fechaCreacion: admin.firestore.Timestamp.now(),
+      fechaUltimaLogin: null
+    });
+    console.log('✅ Usuario guardado en Firestore');
+
+    // PASO 2: Crear colaboradores
+    console.log('📝 Creando colaboradores...');
+    const colaboradores = [
+      { codigoEmpleado: 'E001', nombre: 'Carlos García', cargo: 'Soldador', departamento: 'Soldadura', telefono: '555-0001' },
+      { codigoEmpleado: 'E002', nombre: 'Miguel López', cargo: 'Cortador', departamento: 'Corte', telefono: '555-0002' },
+      { codigoEmpleado: 'E003', nombre: 'Pedro Rodríguez', cargo: 'Pulidor', departamento: 'Acabado', telefono: '555-0003' },
+      { codigoEmpleado: 'E004', nombre: 'Antonio Martínez', cargo: 'Soldador', departamento: 'Soldadura', telefono: '555-0004' },
+      { codigoEmpleado: 'E005', nombre: 'Luis González', cargo: 'Ayudante', departamento: 'General', telefono: '555-0005' },
+      { codigoEmpleado: 'E006', nombre: 'Roberto Sánchez', cargo: 'Cortador', departamento: 'Corte', telefono: '555-0006' },
+      { codigoEmpleado: 'E007', nombre: 'Fernando Díaz', cargo: 'Soldador', departamento: 'Soldadura', telefono: '555-0007' },
+    ];
+
+    for (const colab of colaboradores) {
+      await db.collection('colaboradores').add({
+        ...colab,
+        activo: true,
+        fechaCreacion: admin.firestore.Timestamp.now()
+      });
+    }
+    console.log(`✅ ${colaboradores.length} colaboradores creados`);
+
+    // PASO 3: Crear productos
+    console.log('📝 Creando productos...');
+    const productos = [
+      {
+        codigoBarras: '5901234123457',
+        nombre: 'Lija #120',
+        descripcion: 'Lija para pulir - grano 120',
+        tipo: 'RECURSO',
+        cantidadTotal: 50,
+        cantidadMinima: 10
+      },
+      {
+        codigoBarras: '5901234123458',
+        nombre: 'Pintura Spray Roja',
+        descripcion: 'Aerosol pintura roja brillante - 400ml',
+        tipo: 'RECURSO',
+        cantidadTotal: 30,
+        cantidadMinima: 5
+      },
+      {
+        codigoBarras: '5901234123459',
+        nombre: 'Soldadora MIG',
+        descripcion: 'Máquina soldadora MIG 200A',
+        tipo: 'HERRAMIENTA',
+        cantidadTotal: 2,
+        cantidadMinima: 1
+      },
+      {
+        codigoBarras: '5901234123460',
+        nombre: 'Taladro Eléctrico',
+        descripcion: 'Taladro industrial 1000W',
+        tipo: 'HERRAMIENTA',
+        cantidadTotal: 3,
+        cantidadMinima: 1
+      },
+      {
+        codigoBarras: '5901234123461',
+        nombre: 'Tiner',
+        descripcion: 'Disolvente industrial - galón',
+        tipo: 'RECURSO',
+        cantidadTotal: 20,
+        cantidadMinima: 2
+      },
+      {
+        codigoBarras: '5901234123462',
+        nombre: 'Llave Inglesa 24"',
+        descripcion: 'Llave ajustable profesional',
+        tipo: 'HERRAMIENTA',
+        cantidadTotal: 5,
+        cantidadMinima: 1
+      },
+      {
+        codigoBarras: '5901234123463',
+        nombre: 'Estopa',
+        descripcion: 'Estopa de algodón para limpiar',
+        tipo: 'RECURSO',
+        cantidadTotal: 100,
+        cantidadMinima: 20
+      },
+    ];
+
+    for (const prod of productos) {
+      await db.collection('productos').add({
+        ...prod,
+        fotos: [],
+        activo: true,
+        fechaCreacion: admin.firestore.Timestamp.now(),
+        fechaUltimaModificacion: admin.firestore.Timestamp.now()
+      });
+    }
+    console.log(`✅ ${productos.length} productos creados`);
+
+    console.log('\n✨ ¡Seed completado exitosamente!');
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Error en seed:', error);
+    process.exit(1);
+  }
+}
+
+seed();
+
+
+EJECUTAR EL SCRIPT:
+  node scripts/seed.js
+
+SALIDA ESPERADA:
+  🌱 Iniciando seed...
+  📝 Creando usuario...
+  ✅ Usuario creado: kK9mZ3xL2pQ5rT8uV1wX9yZ
+  ✅ Usuario guardado en Firestore
+  📝 Creando colaboradores...
+  ✅ 7 colaboradores creados
+  📝 Creando productos...
+  ✅ 7 productos creados
+
+  ✨ ¡Seed completado exitosamente!
+
+
+================================================================================
+OPCIÓN 3: IMPORTAR JSON DESDE FIREBASE CONSOLE
+================================================================================
+
+1. Preparar archivo JSON (datos.json):
+
+{
+  "usuarios": {
+    "encargado1": {
+      "nombre": "Juan Pérez",
+      "email": "juan@taller.com",
+      "activo": true,
+      "rol": "ADMIN",
+      "fechaCreacion": "2026-04-16T10:00:00Z",
+      "fechaUltimaLogin": null
+    }
+  },
+  "colaboradores": {
+    "col_001": {
+      "codigoEmpleado": "E001",
+      "nombre": "Carlos García",
+      "cargo": "Soldador",
+      "departamento": "Soldadura",
+      "telefono": "555-0001",
+      "activo": true,
+      "fechaCreacion": "2026-04-01T08:00:00Z"
+    },
+    "col_002": {
+      "codigoEmpleado": "E002",
+      "nombre": "Miguel López",
+      "cargo": "Cortador",
+      "departamento": "Corte",
+      "telefono": "555-0002",
+      "activo": true,
+      "fechaCreacion": "2026-04-01T08:00:00Z"
+    }
+  },
+  "productos": {
+    "prod_001": {
+      "codigoBarras": "5901234123457",
+      "nombre": "Lija #120",
+      "descripcion": "Lija para pulir - grano 120",
+      "tipo": "RECURSO",
+      "cantidadTotal": 50,
+      "cantidadMinima": 10,
+      "fotos": [],
+      "activo": true,
+      "fechaCreacion": "2026-04-01T09:00:00Z",
+      "fechaUltimaModificacion": "2026-04-01T09:00:00Z"
+    }
+  }
+}
+
+2. Usar Firebase CLI para importar:
+   firebase firestore:import datos.json --project inventario-taller
+
+
+================================================================================
+GUÍA RÁPIDA: TIPOS DE DATOS EN FIRESTORE
+================================================================================
+
+TIPOS DISPONIBLES EN FIREBASE CONSOLE:
+
+1. STRING (texto)
+   Ejemplo: "Juan Pérez", "RECURSO", "juan@taller.com"
+
+2. NUMBER (número entero o decimal)
+   Ejemplo: 50, 10, 2.5
+
+3. BOOLEAN (verdadero/falso)
+   Ejemplo: true, false
+
+4. TIMESTAMP (fecha y hora)
+   Ejemplo: 2026-04-16 10:30:00
+   Click en icono reloj para seleccionar
+
+5. REFERENCE (referencia a otro documento)
+   Ejemplo: usuarios/encargado1, colaboradores/col_001
+   Escribe el path completo
+
+6. ARRAY (lista de valores)
+   Ejemplo: ["rojo", "azul", "verde"]
+   O: [{id: "1", cantidad: 5}, {id: "2", cantidad: 3}]
+
+7. MAP (objeto/diccionario)
+   Ejemplo: {nombre: "Juan", edad: 30}
+
+8. NULL (vacío/nulo)
+   Dejar un campo sin valor
+
+
+CÓMO AGREGAR CAMPOS EN FIREBASE CONSOLE:
+
+1. Abre un documento
+2. Click en "Agregar campo"
+3. Ingresa el nombre del campo
+4. Selecciona el tipo (String, Number, etc.)
+5. Ingresa el valor
+6. Click "Guardar"
+
+
+================================================================================
+CHECKLIST: VERIFICAR QUE TODO ESTÁ CORRECTO
+================================================================================
+
+USUARIOS:
+  ☐ Al menos 1 usuario (encargado)
+  ☐ Email y nombre completados
+  ☐ Contraseña hasheada o dejada vacía (se configura después)
+  ☐ activo = true
+
+COLABORADORES:
+  ☐ Al menos 7 colaboradores
+  ☐ codigoEmpleado único (E001, E002, etc.)
+  ☐ Nombre completo
+  ☐ Cargo y departamento
+  ☐ activo = true para todos
+
+PRODUCTOS:
+  ☐ Al menos 2 de cada tipo:
+    • 3-4 RECURSOS (lija, pintura, tiner, estopa)
+    • 2-3 HERRAMIENTAS (soldadora, taladro, llave)
+  ☐ codigoBarras único (EAN-13)
+  ☐ Cantidad y cantidad mínima correctas
+  ☐ tipo = "RECURSO" o "HERRAMIENTA"
+  ☐ activo = true
+
+PRESTAMOS:
+  ☐ Vacía al principio (se llenarán con operaciones del sistema)
+
+Si todo está correcto: ¡Listo para empezar con el backend!
+
+
+================================================================================
+PRÓXIMOS PASOS
+================================================================================
+
+1. ☐ Elegir opción (manual, script, o import)
+2. ☐ Llenar las colecciones
+3. ☐ Verificar que los datos estén completos
+4. ☐ Crear credenciales JSON (descarga)
+5. ☐ Configurar .env en tu proyecto Express
+6. ☐ Empezar a codificar los controllers
+
+================================================================================

@@ -1,0 +1,499 @@
+================================================================================
+SISTEMA DE GESTIÓN DE INVENTARIO Y MOVIMIENTOS - TALLER DE HOJALATERÍA
+Especificaciones y Recomendaciones
+================================================================================
+
+================================================================================
+1. DESCRIPCIÓN GENERAL DEL SISTEMA
+================================================================================
+
+El sistema debe gestionar:
+- Inventario de recursos y herramientas para un taller de hojalatería
+- Movimientos de inventario (préstamos/devoluciones de productos)
+- Registro de colaboradores en piso que solicitan préstamos
+- Código de barras para identificación rápida de productos
+
+Módulos principales:
+  • Gestión de Productos (CRUD)
+  • Gestión de Colaboradores (registro de empleados en piso)
+  • Gestión de Movimientos/Préstamos
+  • Reportes y estadísticas
+
+NOTA: Sistema simplificado con un único usuario (encargado en turno) que realiza
+todas las operaciones en nombre de los colaboradores en piso.
+
+================================================================================
+2. ENTIDADES Y ATRIBUTOS DETALLADOS
+================================================================================
+
+2.1 CLASE PRODUCTO
+-------------------
+Atributos:
+  • Id (UUID o auto-incremental) - PK
+  • CodigoBarras (string única) - Puede ser igual al Id o generarse diferente
+  • Nombre (string, requerido)
+  • Descripcion (string, opcional) - Para detalles como "estopa lija #120"
+  • Tipo (enum: RECURSO | HERRAMIENTA) - Clasificación
+  • CantidadTotal (int) - Stock actual disponible
+  • CantidadMinima (int) - Alerta de stock bajo
+  • PrecioUnitario (decimal, opcional) - Para cálculo de inventario
+  • Fotos (lista de rutas/URL) - Almacenar múltiples fotografías
+  • FechaCreacion (datetime)
+  • FechaUltimaModificacion (datetime)
+  • Activo (boolean) - Para soft-delete
+  
+Validaciones:
+  - CantidadTotal >= 0
+  - CodigoBarras no puede ser vacío ni duplicado
+  - Nombre no puede ser vacío
+  - CodigoBarras debe tener formato consistente (ej: 13 dígitos para EAN-13)
+
+
+2.2 CLASE USUARIO (SINGULAR - ENCARGADO EN TURNO)
+-------------------------------------------------
+Atributos:
+  • Id (UUID o auto-incremental) - PK
+  • Nombre (string, requerido)
+  • Email (string, único, requerido)
+  • Contraseña (string hasheado, requerido) - NUNCA guardar en texto plano
+  • Rol (ADMIN - único rol disponible)
+  • Activo (boolean)
+  • FechaCreacion (datetime)
+  • FechaUltimaLogin (datetime, nullable)
+
+Validaciones:
+  - Email debe ser válido (formato correcto)
+  - Contraseña mínimo 8 caracteres, con mayúscula, número y carácter especial
+  - Email único en la base de datos
+  - Nombre no puede estar vacío
+
+NOTA: El sistema está diseñado para un único usuario (encargado en turno).
+En caso de múltiples turnos, se puede crear un usuario por encargado.
+
+
+2.3 CLASE COLABORADOR (NUEVO - EMPLEADOS EN PISO)
+--------------------------------------------------
+Atributos:
+  • Id (UUID o auto-incremental) - PK
+  • CodigoEmpleado (string, único, requerido) - Para identificación rápida
+  • Nombre (string, requerido)
+  • Cargo (string, opcional) - Ej: "Soldador", "Cortador", "Pulidor"
+  • Departamento (string, opcional) - Ej: "Corte", "Soldadura", "Acabado"
+  • Telefono (string, opcional)
+  • Activo (boolean, default true)
+  • FechaCreacion (datetime)
+
+Validaciones:
+  - CodigoEmpleado único y no vacío
+  - Nombre no puede estar vacío
+
+NOTA: Esta tabla permite tener un catálogo de ~7 colaboradores con datos
+básicos. El encargado selecciona de esta lista al registrar un préstamo.
+
+
+2.4 CLASE PRÉSTAMO (MOVIMIENTO PRINCIPAL)
+-------------------------------------------
+Atributos:
+  • Id (UUID o auto-incremental) - PK
+  • IdColaborador (FK a Colaborador, requerido) - Quien solicita
+  • Estado (enum: PENDIENTE | PARCIALMENTE_DEVUELTO | DEVUELTO | CANCELADO)
+  • FechaSolicitud (datetime)
+  • FechaDevolucionEsperada (datetime, nullable)
+  • FechaDevolucionReal (datetime, nullable)
+  • Observaciones (string, opcional)
+  • UsuarioRegistro (FK a Usuario - encargado que registró)
+  • TurnoRegistro (string, opcional) - Para saber en qué turno se registró
+  
+Validaciones:
+  - Al menos un producto en el préstamo
+  - FechaDevolucionEsperada > FechaSolicitud
+
+
+2.5 CLASE DETALLE_PRÉSTAMO (PRODUCTOS EN UN PRÉSTAMO)
+------------------------------------------------------
+Atributos:
+  • Id (UUID o auto-incremental) - PK
+  • IdPrestamo (FK a Préstamo, requerido)
+  • IdProducto (FK a Producto, requerido)
+  • CantidadSolicitada (int, > 0)
+  • CantidadDevuelta (int, default 0)
+  • PuedeDevolucionParcial (boolean) - True si RECURSO, False si HERRAMIENTA
+  • Estado (enum: PENDIENTE | PARCIALMENTE_DEVUELTO | DEVUELTO) - Por artículo
+
+Validaciones:
+  - CantidadSolicitada <= CantidadDisponible en Producto
+  - Si Producto.Tipo = HERRAMIENTA: 
+    • Un solo DETALLE_PRÉSTAMO por HERRAMIENTA por colaborador activo
+    • CantidadSolicitada = 1 (solo se presta 1 herramienta a la vez)
+    • CantidadDevuelta debe ser 0 o 1 (sin devolución parcial)
+  - Si Producto.Tipo = RECURSO:
+    • Pueden haber múltiples del mismo RECURSO
+    • CantidadDevuelta puede ser < CantidadSolicitada
+
+
+================================================================================
+3. CONSIDERACIONES TÉCNICAS
+================================================================================
+
+3.1 AUTENTICACIÓN Y SEGURIDAD
+-----------------------------
+- Un único usuario (encargado en turno) con credenciales simples
+- Hashear contraseña con bcrypt o similar (NUNCA guardar en texto plano)
+- Implementar autenticación básica (usuario + contraseña)
+- No requiere sistema complejo de roles/permisos (acceso total al encargado)
+- Validar entrada de datos en todas las operaciones
+- Registro básico de acciones (quién y cuándo se registraron movimientos)
+
+
+3.2 GENERACIÓN DE CÓDIGOS DE BARRAS
+-----------------------------------
+OPCIONES:
+  a) Usar el Id del producto como código (simple)
+  b) Generar un código EAN-13 estándar (profesional)
+  c) Usar UUID truncado (único pero aleatorio)
+
+RECOMENDACIÓN: 
+- Usar EAN-13 para profesionalismo
+- Generar formato: 5 primeros dígitos (empresa) + 8 dígitos (producto)
+- Permitir lectura con lectores estándar de códigos de barras USB
+- Generar PDF/imagen de código de barras para imprimir
+
+LIBRERÍAS SUGERIDAS:
+- Python: python-barcode, qrcode
+- Java: BarCode4j, ZXing
+- JavaScript: jsBarcode
+
+
+3.3 ALMACENAMIENTO DE FOTOS
+---------------------------
+OPCIONES:
+  a) Guardar en carpeta local del servidor (simple para MVP)
+  b) Base de datos BLOB (no recomendado para imágenes)
+  c) Cloud storage (AWS S3, Google Cloud Storage, Azure)
+
+RECOMENDACIÓN para MVP:
+- Crear carpeta: /almacenamiento/productos/[IdProducto]/
+- Guardar fotos con nombres: foto_1.jpg, foto_2.jpg
+- Almacenar rutas relativas en BD: "productos/123/foto_1.jpg"
+- Limitar tamaño: máximo 5MB por imagen
+
+
+3.4 BASE DE DATOS
+-----------------
+RECOMENDACIONES:
+- Usar PostgreSQL o MySQL para producción
+- SQLite3 para desarrollo/MVP
+- Implementar índices en:
+  • CodigoBarras (Producto)
+  • Email (Usuario)
+  • Estado (Préstamo)
+  • Fechas para reportes
+
+
+3.5 REPORTES Y ESTADÍSTICAS
+---------------------------
+Reportes útiles:
+- Stock actual de productos
+- Productos con bajo stock
+- Historial de movimientos (préstamos/devoluciones)
+- Productos más solicitados
+- Demoras en devoluciones
+- Auditoría de cambios
+
+
+================================================================================
+4. FUNCIONALIDADES PRINCIPALES DEL CRUD
+================================================================================
+
+4.1 GESTIÓN DE PRODUCTOS
+------------------------
+CREATE:
+  - Formulario con todos los campos
+  - Generar automáticamente código de barras
+  - Permitir cargar múltiples fotos
+  - Validar unicidad del código de barras
+
+READ:
+  - Listar todos los productos (con filtros)
+  - Filtrar por tipo (RECURSO/HERRAMIENTA)
+  - Buscar por nombre o código de barras
+  - Ver detalles completos de un producto
+  - Mostrar todas las fotos
+
+UPDATE:
+  - Editar información del producto
+  - Agregar/eliminar fotos
+  - Actualizar stock (solo por movimiento, no directo)
+  - Cambiar stock mínimo
+
+DELETE (Soft-delete recomendado):
+  - No eliminar físicamente, marcar como inactivo
+  - Preservar historial de movimientos
+  - Permitir reactivar productos
+
+
+4.2 GESTIÓN DE COLABORADORES
+----------------------------
+CREATE:
+  - Agregar nuevo colaborador (nombre, cargo, departamento)
+  - Generar automáticamente código de empleado
+  - Sin límite de colaboradores (> 7 es posible)
+
+READ:
+  - Listar todos los colaboradores activos
+  - Ver detalles de colaborador específico
+  - Filtrar por departamento/cargo (opcional)
+
+UPDATE:
+  - Editar datos del colaborador
+  - Cambiar cargo o departamento
+
+DELETE (Soft-delete):
+  - No eliminar físicamente, marcar como inactivo
+  - Preservar historial de préstamos
+
+
+4.3 GESTIÓN DE PRÉSTAMOS/MOVIMIENTOS
+------------------------------------
+CREATE (Salida de múltiples productos):
+  - Seleccionar colaborador
+  - Agregar múltiples productos al mismo préstamo:
+    • Si HERRAMIENTA: máximo 1 unidad por herramienta
+    • Si RECURSO: cantidad deseada
+  - Validar stock disponible para cada producto
+  - Validar: solo 1 HERRAMIENTA tipo X activa por colaborador
+  - Generar comprobante con todos los productos
+
+UPDATE:
+  - Registrar devolución parcial/total
+  - Cambiar estado
+  - Actualizar observaciones
+  - Extender fecha de devolución
+
+READ:
+  - Listar préstamos activos
+  - Filtrar por estado
+  - Historial completo de movimientos
+  - Ver detalles de préstamo específico
+
+REPORTES:
+  - Préstamos vencidos
+  - Movimientos por periodo
+  - Productos más movidos
+  - Colaboradores con más préstamos activos
+
+
+================================================================================
+5. FLUJO DE MOVIMIENTOS
+================================================================================
+
+FLUJO DE PRÉSTAMO (Encargado registrando en nombre de colaborador):
+  1. Encargado inicia sesión (usuario único)
+  2. Va a módulo de Préstamos
+  3. Selecciona colaborador
+  4. Agrega múltiples productos:
+     - Si HERRAMIENTA: validar no esté activa en otro préstamo
+     - Si RECURSO: cantidad deseada
+  5. Sistema valida stock total disponible
+  6. Se crea registro Préstamo con Estado: PENDIENTE
+  7. Se crean registros en DETALLE_PRÉSTAMO para cada producto
+  8. Se reduce CantidadTotal de Producto por cada unidad
+  9. Se genera comprobante con listado (imprimible)
+  10. Se registra encargado + fecha/hora + turno
+
+FLUJO DE DEVOLUCIÓN:
+  1. Encargado recibe devolución de producto(s)
+  2. Busca préstamo activo del colaborador
+  3. Por cada DETALLE_PRÉSTAMO en devolución:
+     - Si HERRAMIENTA: cantidad = 1 (todo o nada)
+       • Estado: DEVUELTO (sin parcial)
+     - Si RECURSO: ingresa cantidad devuelta
+       • Si cantidad < solicitada: Estado = PARCIALMENTE_DEVUELTO
+       • Si cantidad == solicitada: Estado = DEVUELTO
+  4. Se incrementa CantidadTotal del Producto
+  5. Si todos los productos están devueltos: Préstamo = DEVUELTO
+  6. Si alguno está parcial: Préstamo = PARCIALMENTE_DEVUELTO
+  7. Se registra fecha de devolución real
+  8. Se genera recepción
+
+ALERTAS:
+  - Préstamo SIN ENTREGAR al final del turno (ROJO) - CRÍTICA
+  - Herramienta no devuelta después de fecha esperada (ROJO)
+  - Producto con stock bajo (AMARILLO)
+  - Préstamo próximo a vencer en el turno (NARANJA)
+
+
+================================================================================
+6. ARQUITECTURA SUGERIDA
+================================================================================
+
+ESTRUCTURA MVC o N-CAPAS:
+  
+  Presentación (UI)
+  ↓
+  Controladores (API endpoints)
+  ↓
+  Servicios (Lógica de negocio)
+  ↓
+  Repositorios (Acceso a datos)
+  ↓
+  Base de Datos
+
+CARPETAS RECOMENDADAS:
+  /proyecto
+    /src
+      /modelos (Clases/Esquemas)
+      /controladores
+      /servicios
+      /repositorios
+      /middlewares (Autenticación, validación)
+      /utilidades (Generadores de códigos, helpers)
+      /almacenamiento (Gestión de archivos)
+    /tests
+    /documentacion
+    /recursos (Fotos, códigos de barras)
+    /base_datos (Scripts SQL)
+
+
+================================================================================
+7. TECNOLOGÍAS RECOMENDADAS
+================================================================================
+
+OPCIÓN 2 - JAVASCRIPT/NODE.JS (SELECCIONADA)
+---------------------------------------------
+Backend:
+  - Express.js (framework HTTP)
+  - Sequelize ORM (gestión de base de datos)
+  - bcryptjs (hash de contraseñas)
+  - jsonwebtoken (JWT para autenticación)
+  - jimp o sharp (procesamiento de imágenes)
+  - jsbarcode (generación de códigos de barras)
+  - axios (cliente HTTP)
+  - dotenv (variables de entorno)
+  - express-validator (validación)
+  - multer (carga de archivos)
+
+Frontend:
+  - HTML5 / CSS3 / JavaScript Vanilla
+  - Bootstrap o Tailwind (opcional, para estilos)
+  - Fetch API o axios (consumir API REST)
+  - Chart.js (gráficos en reportes)
+
+Base de Datos:
+  - PostgreSQL (producción)
+  - SQLite (desarrollo/MVP)
+
+Estructura de carpetas:
+  /proyecto
+    /src
+      /config (Sequelize, conexión BD)
+      /models (Modelos: Usuario, Producto, Colaborador, Prestamo, DetallePrestamo)
+      /routes (Rutas API)
+      /controllers (Controladores)
+      /services (Servicios/lógica negocio)
+      /middlewares (Autenticación, validación)
+      /utils (Generadores, helpers)
+    /public (Frontend: HTML, CSS, JS)
+    /uploads (Almacenamiento de fotos/códigos de barras)
+    /scripts (Seeds, migraciones)
+    .env (variables de entorno)
+    server.js (punto de entrada)
+
+
+================================================================================
+8. MEJORAS FUTURAS (FASE 2+)
+================================================================================
+
+- Dashboard con gráficos de estadísticas
+- Sistema de notificaciones (email/SMS) para devoluciones vencidas
+- Integración con lectores de códigos de barras USB
+- App móvil para registro de movimientos
+- Sistema de categorías y subcategorías
+- Múltiples sucursales/almacenes
+- Transferencias de inventario entre ubicaciones
+- Alertas automáticas de reorden
+- Historial de precios
+- Proveedores y control de compras
+- Exportación a Excel/PDF
+- API REST completa documentada
+- Autenticación multi-factor
+
+
+================================================================================
+9. REQUISITOS CONFIRMADOS
+================================================================================
+
+✓ Múltiples productos en un préstamo
+  - Se prestan varios productos en una sola transacción
+  - Se genera un único Préstamo con múltiples DETALLE_PRÉSTAMO
+
+✓ Límite por tipo de producto
+  - HERRAMIENTA: máximo 1 unidad por colaborador activo
+    • No puede haber 2 herramientas del mismo tipo prestadas al mismo colaborador
+  - RECURSO: múltiples del mismo
+    • Pueden prestarse ilimitados del mismo recurso (lija #120, tiner, etc.)
+
+✓ Sin firma o confirmación
+  - Sistema simplificado por confianza entre empleados
+
+✓ Devolución parcial
+  - HERRAMIENTA: NO permite devolución parcial (todo o nada)
+  - RECURSO: SÍ permite devolución parcial
+
+✓ Alertas por no entrega en turno
+  - CRÍTICA: Mostrar alertas visuales de préstamos no devueltos al final del turno
+  - Herramientas con mayor seguimiento (no se pueden dejar sin entregar)
+
+✓ Un único usuario (encargado en turno)
+  - Sistema diseñado para 1 usuario
+  - Posibilidad de múltiples encargados en diferentes turnos (crear usuario por turno si necesario)
+
+✓ Colaboradores sin límite
+  - Inicialmente ~7, pero sistema permite registrar más
+  - CRUD completo para gestionar colaboradores
+
+✓ Tecnología: Express.js + Sequelize
+  - Backend Node.js con Express
+  - ORM Sequelize para gestión de BD
+  - Frontend HTML/CSS/JavaScript Vanilla
+  - Base de datos SQLite (MVP) o PostgreSQL (producción)
+
+
+================================================================================
+10. CHECKLIST INICIAL
+================================================================================
+
+ANÁLISIS:
+  ☐ Definir tecnología específica
+  ☐ Establecer cronograma
+  ☐ Estimar recursos
+
+DISEÑO:
+  ☐ Diagrama ER (Producto, Usuario, Colaborador, Préstamo)
+  ☐ Diseño de base de datos
+  ☐ Mockups de interfaz
+  ☐ Diagramas de flujo
+
+DESARROLLO:
+  ☐ Configurar ambiente
+  ☐ Crear estructura de carpetas
+  ☐ Implementar modelos (Producto, Usuario, Colaborador, Préstamo)
+  ☐ Crear base de datos
+  ☐ Implementar CRUD de productos
+  ☐ Implementar CRUD de colaboradores
+  ☐ Implementar autenticación simple (usuario único)
+  ☐ Implementar CRUD de movimientos
+  ☐ Implementar generador de códigos de barras
+  ☐ Crear interfaz frontend simplificada
+
+PRUEBAS:
+  ☐ Pruebas unitarias
+  ☐ Pruebas de integración
+  ☐ Pruebas de seguridad
+
+DOCUMENTACIÓN:
+  ☐ README.md
+  ☐ Manual de usuario
+  ☐ Guía de instalación
+
+================================================================================

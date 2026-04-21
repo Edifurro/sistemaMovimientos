@@ -1,0 +1,534 @@
+================================================================================
+FIREBASE: SOLUCIÓN RECOMENDADA PARA TU PROYECTO
+================================================================================
+
+DECISIÓN: Usar Firebase en lugar de Docker + Ubuntu Server
+
+RAZONES:
+  ✓ 2 usuarios = sin necesidad de infraestructura compleja
+  ✓ Gratis para proyecto pequeño (500MB datos)
+  ✓ Acceso simultáneo automático (real-time)
+  ✓ Sin laptop que mantener 24/7
+  ✓ Backups automáticos
+  ✓ Seguridad integrada
+  ✓ Setup en < 1 hora
+
+
+================================================================================
+LIMITACIONES GRATUITAS DE FIREBASE (Para ti son SUFICIENTES)
+================================================================================
+
+Plan Spark (Gratuito):
+  ✓ 1GB almacenamiento (Firestore + Storage)
+  ✓ 50,000 lecturas/día
+  ✓ 20,000 escrituras/día
+  ✓ 20,000 borrados/día
+  ✓ 1 GB descarga/mes
+  ✓ 100 conexiones simultáneas
+  ✓ Autenticación: Ilimitada
+
+ESTIMACIÓN DE USO (Tu taller):
+  Encargado + Ayudante registran ~20 préstamos/devoluciones por día:
+  - Lecturas: ~5 por operación (validar stock, ver préstamos, etc.)
+  - Escrituras: ~3 por operación (crear/actualizar préstamo, stock)
+  - 100 operaciones/día = 500 lecturas + 300 escrituras
+  
+  Consumo mensual: 15,000 lecturas + 9,000 escrituras
+  → Ampliamente dentro de los límites GRATUITOS
+
+Si excedes: Blaze Plan (pago por uso, muy barato)
+
+
+================================================================================
+ARQUITECTURA CON FIREBASE
+================================================================================
+
+OPCIÓN A: Firebase + Express.js (RECOMENDADA)
+----------------------------------------------
+Frontend → Express.js → Firebase Admin SDK → Firestore
+              ↓
+           Autenticación
+
+Ventajas:
+  ✓ Mantienes Express como dijiste
+  ✓ Control sobre lógica negocio
+  ✓ Flexible
+  ✓ API REST personalizada
+
+OPCIÓN B: Firebase + Frontend (Más simple)
+-------------------------------------------
+Frontend → Firebase SDK → Firestore
+         ↓ (Directa)
+      Autenticación
+
+Ventajas:
+  ✓ Sin backend (serverless puro)
+  ✓ Más rápido
+  ✓ Menos código
+  ✓ Real-time automático
+
+YO RECOMIENDO: OPCIÓN A (Firebase + Express)
+- Cumple lo que dijiste (Express + BD remota)
+- Mejor control
+- Lógica negocio centralizada
+
+
+================================================================================
+SETUP FIREBASE - PASO A PASO
+================================================================================
+
+PASO 1: Crear proyecto en Firebase
+  1. Ir a: console.firebase.google.com
+  2. Click en "Crear proyecto"
+  3. Nombre: "Inventario Taller"
+  4. Desactivar Google Analytics
+  5. Crear proyecto
+
+PASO 2: Crear Firestore Database
+  1. En consola Firebase → Firestore Database
+  2. Click "Crear base de datos"
+  3. Modo de inicio: "Modo de prueba" (más permisivo para desarrollo)
+  4. Ubicación: Más cercana (ej: us-central1)
+  5. Crear
+
+PASO 3: Crear colecciones
+  Firestore es NoSQL, no tiene tablas. En su lugar, colecciones:
+  
+  /usuarios
+    - id
+    - nombre
+    - email
+    - contraseña (hasheada)
+    - activo
+    - fechaCreacion
+  
+  /productos
+    - id
+    - codigoBarras
+    - nombre
+    - descripcion
+    - tipo (RECURSO | HERRAMIENTA)
+    - cantidadTotal
+    - cantidadMinima
+    - fotos (array de URLs)
+    - activo
+    - fechaCreacion
+  
+  /colaboradores
+    - id
+    - codigoEmpleado
+    - nombre
+    - cargo
+    - departamento
+    - telefono
+    - activo
+    - fechaCreacion
+  
+  /prestamos
+    - id
+    - idColaborador (referencia)
+    - estado (PENDIENTE | PARCIALMENTE_DEVUELTO | DEVUELTO | CANCELADO)
+    - fechaSolicitud
+    - fechaDevolucionEsperada
+    - fechaDevolucionReal
+    - observaciones
+    - usuarioRegistro (referencia)
+    - turnoRegistro
+    - detalles (array de {idProducto, cantidad, estado})
+
+PASO 4: Configurar autenticación
+  1. Autenticación → Método de inicio de sesión
+  2. Habilitar: Email/Contraseña
+  3. Crear usuario de prueba (tu encargado)
+
+PASO 5: Crear Storage (para fotos)
+  1. Storage → Crear bucket
+  2. Regla de seguridad: permitir lecturas públicas, escrituras autenticadas
+
+PASO 6: Obtener credenciales
+  1. Configuración del proyecto → Cuentas de servicio
+  2. Generar clave privada (JSON)
+  3. Guardar como .env (NUNCA commitear)
+
+
+================================================================================
+INTEGRACIÓN CON EXPRESS.JS
+================================================================================
+
+INSTALACIÓN:
+  npm install firebase-admin express
+
+CONFIGURACIÓN (.env):
+  FIREBASE_PROJECT_ID=inventario-taller-xyz
+  FIREBASE_PRIVATE_KEY_ID=xxx
+  FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+  FIREBASE_CLIENT_EMAIL=firebase-adminsdk@inventario-taller-xyz.iam.gserviceaccount.com
+  FIREBASE_CLIENT_ID=123456
+  FIREBASE_AUTH_URI=https://accounts.google.com/o/oauth2/auth
+  FIREBASE_TOKEN_URI=https://oauth2.googleapis.com/token
+  FIREBASE_AUTH_PROVIDER_CERT_URL=https://www.googleapis.com/oauth2/v1/certs
+  FIREBASE_CLIENT_CERT_URL=https://www.googleapis.com/robot/v1/metadata/x509/...
+  NODE_ENV=production
+
+CONFIGURACIÓN Express (config/firebase.js):
+  const admin = require('firebase-admin');
+  
+  const serviceAccount = {
+    projectId: process.env.FIREBASE_PROJECT_ID,
+    privateKeyId: process.env.FIREBASE_PRIVATE_KEY_ID,
+    privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+    clientId: process.env.FIREBASE_CLIENT_ID,
+    authUri: process.env.FIREBASE_AUTH_URI,
+    tokenUri: process.env.FIREBASE_TOKEN_URI,
+    authProviderCertUrl: process.env.FIREBASE_AUTH_PROVIDER_CERT_URL,
+    clientCertUrl: process.env.FIREBASE_CLIENT_CERT_URL,
+  };
+  
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+    databaseURL: `https://${process.env.FIREBASE_PROJECT_ID}.firebaseio.com`
+  });
+  
+  module.exports = admin;
+
+EJEMPLO: Controlador de Productos (controllers/productController.js)
+  const admin = require('../config/firebase');
+  const db = admin.firestore();
+  
+  // CREATE - Crear producto
+  exports.crearProducto = async (req, res) => {
+    try {
+      const { nombre, descripcion, tipo, cantidadMinima } = req.body;
+      
+      const productoRef = await db.collection('productos').add({
+        nombre,
+        descripcion,
+        tipo,
+        cantidadTotal: 0,
+        cantidadMinima,
+        codigoBarras: generarCodigoBarras(), // Tu función
+        fotos: [],
+        activo: true,
+        fechaCreacion: admin.firestore.Timestamp.now(),
+        fechaUltimaModificacion: admin.firestore.Timestamp.now()
+      });
+      
+      res.status(201).json({
+        id: productoRef.id,
+        mensaje: 'Producto creado'
+      });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  };
+  
+  // READ - Listar productos
+  exports.listarProductos = async (req, res) => {
+    try {
+      const snapshot = await db.collection('productos')
+        .where('activo', '==', true)
+        .get();
+      
+      const productos = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      res.json(productos);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  };
+  
+  // UPDATE - Actualizar stock
+  exports.actualizarStock = async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { cantidad } = req.body;
+      
+      await db.collection('productos').doc(id).update({
+        cantidadTotal: cantidad,
+        fechaUltimaModificacion: admin.firestore.Timestamp.now()
+      });
+      
+      res.json({ mensaje: 'Stock actualizado' });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  };
+  
+  // DELETE - Soft delete
+  exports.eliminarProducto = async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      await db.collection('productos').doc(id).update({
+        activo: false
+      });
+      
+      res.json({ mensaje: 'Producto desactivado' });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  };
+
+AUTENTICACIÓN (middlewares/auth.js):
+  const admin = require('../config/firebase');
+  
+  exports.autenticar = async (req, res, next) => {
+    try {
+      const token = req.headers.authorization?.split('Bearer ')[1];
+      if (!token) return res.status(401).json({ error: 'No autorizado' });
+      
+      const decodedToken = await admin.auth().verifyIdToken(token);
+      req.usuario = decodedToken;
+      next();
+    } catch (error) {
+      res.status(401).json({ error: 'Token inválido' });
+    }
+  };
+
+
+================================================================================
+RUTAS API (routes/productos.js)
+================================================================================
+
+const express = require('express');
+const router = express.Router();
+const productController = require('../controllers/productController');
+const { autenticar } = require('../middlewares/auth');
+
+// Todas las rutas requieren autenticación
+router.use(autenticar);
+
+router.post('/', productController.crearProducto);
+router.get('/', productController.listarProductos);
+router.put('/:id/stock', productController.actualizarStock);
+router.delete('/:id', productController.eliminarProducto);
+
+module.exports = router;
+
+
+================================================================================
+FRONTEND: Autenticación con Firebase
+================================================================================
+
+HTML (login.html):
+  <form id="loginForm">
+    <input type="email" id="email" placeholder="Email">
+    <input type="password" id="password" placeholder="Contraseña">
+    <button type="submit">Ingresar</button>
+  </form>
+  
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js"></script>
+  
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSy... (desde Firebase Console)",
+      authDomain: "inventario-taller.firebaseapp.com",
+      projectId: "inventario-taller",
+      storageBucket: "inventario-taller.appspot.com",
+      messagingSenderId: "123456",
+      appId: "1:123456:web:abc123"
+    };
+    
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      
+      try {
+        const userCredential = await auth.signInWithEmailAndPassword(email, password);
+        const token = await userCredential.user.getIdToken();
+        
+        // Guardar token en localStorage
+        localStorage.setItem('token', token);
+        
+        // Redirigir a dashboard
+        window.location.href = '/dashboard.html';
+      } catch (error) {
+        console.error('Error:', error.message);
+      }
+    });
+  </script>
+
+API CALL (dashboard.js):
+  const token = localStorage.getItem('token');
+  
+  fetch('/api/productos', {
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  })
+  .then(r => r.json())
+  .then(productos => {
+    console.log('Productos:', productos);
+  });
+
+
+================================================================================
+ALMACENAMIENTO DE FOTOS
+================================================================================
+
+Firebase Storage para guardar imágenes:
+
+const admin = require('firebase-admin');
+const bucket = admin.storage().bucket();
+
+exports.subirFoto = async (req, res) => {
+  try {
+    const file = req.file;
+    const productId = req.params.id;
+    
+    const fileName = `productos/${productId}/${Date.now()}-${file.originalname}`;
+    
+    await bucket.file(fileName).save(file.buffer, {
+      metadata: {
+        contentType: file.mimetype
+      }
+    });
+    
+    // Obtener URL pública
+    const url = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+    
+    // Guardar URL en Firestore
+    await db.collection('productos').doc(productId).update({
+      fotos: admin.firestore.FieldValue.arrayUnion(url)
+    });
+    
+    res.json({ url });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+
+================================================================================
+SEGURIDAD EN FIREBASE
+================================================================================
+
+Reglas de Seguridad Firestore (security rules):
+  
+  rules_version = '2';
+  service cloud.firestore {
+    match /databases/{database}/documents {
+      // Usuarios autenticados pueden leer/escribir sus propios datos
+      match /usuarios/{userId} {
+        allow read, write: if request.auth.uid == userId;
+      }
+      
+      // Todos autenticados pueden leer productos activos
+      match /productos/{document=**} {
+        allow read: if request.auth != null && resource.data.activo == true;
+        allow write: if false; // Solo backend puede escribir
+      }
+      
+      // Colaboradores
+      match /colaboradores/{document=**} {
+        allow read: if request.auth != null && resource.data.activo == true;
+      }
+      
+      // Préstamos
+      match /prestamos/{document=**} {
+        allow read, write: if request.auth != null;
+      }
+    }
+  }
+
+Reglas de Storage:
+
+  rules_version = '2';
+  service firebase.storage {
+    match /b/{bucket}/o {
+      match /productos/{allPaths=**} {
+        // Solo backend carga (auth via Admin SDK)
+        allow read: if true;
+        allow write: if false;
+      }
+    }
+  }
+
+
+================================================================================
+PLAN DE DESARROLLO CON FIREBASE
+================================================================================
+
+SEMANA 1:
+  ☐ Crear proyecto Firebase
+  ☐ Configurar colecciones
+  ☐ Crear usuario de prueba
+  ☐ Configurar Express + Firebase Admin SDK
+
+SEMANA 2:
+  ☐ Implementar autenticación
+  ☐ CRUD de Productos
+  ☐ CRUD de Colaboradores
+
+SEMANA 3:
+  ☐ CRUD de Préstamos
+  ☐ Lógica de validaciones
+  ☐ Alertas
+
+SEMANA 4:
+  ☐ Frontend (HTML/CSS/JS)
+  ☐ Integración con API
+  ☐ Testing
+
+SEMANA 5:
+  ☐ Deployment
+  ☐ Documentación
+  ☐ Training
+
+
+================================================================================
+COMPARATIVA: Firebase vs Docker + Ubuntu
+================================================================================
+
+┌────────────────────┬──────────────────┬─────────────────┐
+│ Aspecto            │ Firebase         │ Docker + Ubuntu │
+├────────────────────┼──────────────────┼─────────────────┤
+│ Costo              │ Gratis           │ Gratis          │
+│ Setup              │ 30 min           │ 3 horas         │
+│ Mantenimiento      │ Ninguno          │ Bajo            │
+│ Uptime             │ 99.9% SLA        │ Depende tú      │
+│ Escalabilidad      │ Automática       │ Manual          │
+│ Backups            │ Automáticos      │ Manual          │
+│ Seguridad          │ Enterprise       │ Responsabilidad │
+│ Real-time          │ Nativo           │ Websockets      │
+│ Para 2 usuarios    │ ⭐⭐⭐⭐⭐      │ ⭐⭐⭐          │
+│ Fácil de usar      │ ⭐⭐⭐⭐⭐      │ ⭐⭐⭐          │
+└────────────────────┴──────────────────┴─────────────────┘
+
+GANADOR: Firebase para tu caso
+
+
+================================================================================
+PRÓXIMOS PASOS
+================================================================================
+
+1. ☐ Crear cuenta Google (gratis)
+2. ☐ Crear proyecto Firebase
+3. ☐ Configurar Firestore Database
+4. ☐ Crear autenticación
+5. ☐ Descargar credenciales JSON
+6. ☐ Configurar Express con Firebase Admin SDK
+7. ☐ Empezar a codificar modelos/controllers
+
+¿Comenzamos con el setup?
+
+
+================================================================================
+RECURSOS ÚTILES
+================================================================================
+
+Firebase Documentation: https://firebase.google.com/docs
+Firebase Admin SDK: https://firebase.google.com/docs/admin/setup
+Firestore Guide: https://firebase.google.com/docs/firestore
+Storage Guide: https://firebase.google.com/docs/storage
+
+================================================================================

@@ -1,0 +1,67 @@
+// Firestore Security Rules para Sistema de Movimientos
+// Copiar estas reglas en Firebase Console > Firestore > Rules
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Permitir lectura/escritura solo para usuarios autenticados
+    function isAuth() {
+      return request.auth != null;
+    }
+    
+    // Verificar que el usuario sea el propietario del documento
+    function isOwner(uid) {
+      return request.auth.uid == uid;
+    }
+
+    // Obtener perfil del usuario autenticado
+    function userProfile() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid));
+    }
+
+    // Verificar rol admin, soportando valores historicos (admin/ADMIN)
+    function isAdmin() {
+      return isAuth()
+        && userProfile().exists()
+        && (
+          userProfile().data.rol == 'admin'
+          || userProfile().data.rol == 'ADMIN'
+        );
+    }
+    
+    // Colección: usuarios (solo el usuario autenticado puede leer su propia información)
+    match /usuarios/{uid} {
+      allow read: if isAuth() && isOwner(uid);
+      allow write: if isAuth() && isOwner(uid);
+      
+      // Permitir crear nuevo usuario solo si no existe la colección (primer usuario)
+      allow create: if !exists(/databases/$(database)/documents/usuarios/$(request.auth.uid));
+    }
+    
+    // Colección: productos (todos los usuarios autenticados pueden leer, solo admin/owner puede escribir)
+    match /productos/{productId} {
+      allow read: if isAuth();
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // Colección: colaboradores (todos los usuarios autenticados pueden leer)
+    match /colaboradores/{colaboradorId} {
+      allow read: if isAuth();
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // Colección: prestamos (todos pueden leer, escribir según reglas)
+    match /prestamos/{prestamoId} {
+      allow read: if isAuth();
+      allow create: if isAdmin();
+      allow update, delete: if isAdmin();
+    }
+    
+    // Colección: reportes (solo lectura para usuarios autenticados)
+    match /reportes/{reportId} {
+      allow read: if isAuth();
+      allow write: if false; // Los reportes se generan en backend
+    }
+  }
+}
