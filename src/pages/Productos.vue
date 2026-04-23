@@ -266,6 +266,7 @@ import { ref, onMounted, computed } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { useRouter } from 'vue-router'
 import { Capacitor } from '@capacitor/core'
+import { Directory, Filesystem } from '@capacitor/filesystem'
 import { Share } from '@capacitor/share'
 import JsBarcode from 'jsbarcode'
 import { useProducts } from '../composables/useProducts'
@@ -333,11 +334,11 @@ const formData = ref({
 
 const LABEL_WIDTH_PX = 320
 const LABEL_HEIGHT_PX = 160
+const LABEL_RENDER_SCALE = 3
 
 const generateBarcode = () => {
-  const timestamp = Date.now().toString().slice(-8)
-  const randomPart = Math.floor(1000 + Math.random() * 9000)
-  return `PRD-${timestamp}-${randomPart}`
+  // Codigo numerico de 8 digitos para mejorar lectura en escaner termico.
+  return Math.floor(10000000 + Math.random() * 90000000).toString()
 }
 
 const resetForm = () => {
@@ -506,8 +507,8 @@ const closeModal = () => {
 
 const buildLabelDataUrl = (code) => {
   const canvas = document.createElement('canvas')
-  canvas.width = LABEL_WIDTH_PX
-  canvas.height = LABEL_HEIGHT_PX
+  canvas.width = LABEL_WIDTH_PX * LABEL_RENDER_SCALE
+  canvas.height = LABEL_HEIGHT_PX * LABEL_RENDER_SCALE
   const ctx = canvas.getContext('2d')
   if (!ctx) {
     throw new Error('No se pudo crear el lienzo de impresion.')
@@ -516,21 +517,81 @@ const buildLabelDataUrl = (code) => {
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-  JsBarcode(canvas, code, {
+  const barcodeCanvas = document.createElement('canvas')
+  barcodeCanvas.width = LABEL_WIDTH_PX * LABEL_RENDER_SCALE
+  barcodeCanvas.height = 104 * LABEL_RENDER_SCALE
+  const barcodeCtx = barcodeCanvas.getContext('2d')
+  if (!barcodeCtx) {
+    throw new Error('No se pudo crear el lienzo del codigo de barras.')
+  }
+
+  barcodeCtx.fillStyle = '#ffffff'
+  barcodeCtx.fillRect(0, 0, barcodeCanvas.width, barcodeCanvas.height)
+
+  JsBarcode(barcodeCanvas, code, {
     format: 'CODE128',
     displayValue: false,
-    margin: 6,
-    height: 90,
-    width: 2
+    marginLeft: 34,
+    marginRight: 34,
+    marginTop: 8,
+    marginBottom: 8,
+    height: 86 * LABEL_RENDER_SCALE,
+    width: 2.4,
+    lineColor: '#000000',
+    background: '#ffffff'
   })
 
+  ctx.imageSmoothingEnabled = false
+  ctx.drawImage(
+    barcodeCanvas,
+    0,
+    0,
+    barcodeCanvas.width,
+    barcodeCanvas.height,
+    0,
+    8 * LABEL_RENDER_SCALE,
+    canvas.width,
+    104 * LABEL_RENDER_SCALE
+  )
+
   ctx.fillStyle = '#000000'
-  ctx.font = '16px Arial'
+  ctx.font = '24px monospace'
   ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillText(code, canvas.width / 2, 132)
+  ctx.textBaseline = 'bottom'
+  ctx.fillText(code, canvas.width / 2, canvas.height - 6)
+
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  const data = imageData.data
+  for (let i = 0; i < data.length; i += 4) {
+    const luminance = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
+    const value = luminance < 210 ? 0 : 255
+    data[i] = value
+    data[i + 1] = value
+    data[i + 2] = value
+    data[i + 3] = 255
+  }
+  ctx.putImageData(imageData, 0, 0)
 
   return canvas.toDataURL('image/png')
+}
+
+const buildLabelFileUri = async (code) => {
+  const dataUrl = buildLabelDataUrl(code)
+  const base64Data = dataUrl.split(',')[1]
+
+  if (!base64Data) {
+    throw new Error('No se pudo generar la imagen de impresión.')
+  }
+
+  const fileName = `tinyprint-${code}.png`
+  const result = await Filesystem.writeFile({
+    path: fileName,
+    data: base64Data,
+    directory: Directory.Cache,
+    recursive: true
+  })
+
+  return result.uri
 }
 
 const shareLabelToTinyPrint = async () => {
@@ -553,11 +614,11 @@ const shareLabelToTinyPrint = async () => {
 
   try {
     isPrinting.value = true
-    const dataUrl = buildLabelDataUrl(barcode)
+    const fileUri = await buildLabelFileUri(barcode)
     await Share.share({
       title: 'Etiqueta de producto',
       text: barcode,
-      url: dataUrl,
+      files: [fileUri],
       dialogTitle: 'Compartir etiqueta con TinyPrint'
     })
   } catch (err) {

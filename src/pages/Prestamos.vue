@@ -148,6 +148,18 @@
               </ion-label>
             </ion-item>
 
+            <ion-button
+              expand="block"
+              fill="outline"
+              class="scan-button"
+              :disabled="isScanningBarcode"
+              @click="openBarcodeScanner"
+            >
+              <ion-icon slot="start" :icon="scan"></ion-icon>
+              {{ isScanningBarcode ? 'Abriendo camara...' : 'Escanear codigo de barras' }}
+            </ion-button>
+            <p class="field-hint">Usa la camara trasera para seleccionar producto por codigo.</p>
+
             <ion-item>
               <ion-label position="stacked">Cantidad</ion-label>
               <ion-input v-model.number="itemForm.cantidad" type="number" min="1" :legacy="true"></ion-input>
@@ -359,6 +371,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { onBeforeRouteLeave } from 'vue-router'
+import { Capacitor } from '@capacitor/core'
+import { BarcodeFormat, BarcodeScanner } from '@capacitor-mlkit/barcode-scanning'
 import { usePrestamos } from '../composables/usePrestamos'
 import { useProducts } from '../composables/useProducts'
 import { useColaboradores } from '../composables/useColaboradores'
@@ -388,7 +402,7 @@ import {
   IonToast,
   onIonViewWillLeave
 } from '@ionic/vue'
-import { add, apps, home, cube, people, swapHorizontal } from 'ionicons/icons'
+import { add, apps, home, cube, people, swapHorizontal, scan } from 'ionicons/icons'
 
 const router = useRouter()
 const { prestamos, loading, error, createPrestamo, getPrestamos, devolverPrestamo } = usePrestamos()
@@ -406,6 +420,7 @@ const showToast = ref(false)
 const toastMessage = ref('')
 const isDetailModalOpen = ref(false)
 const selectedPrestamoDetail = ref(null)
+const isScanningBarcode = ref(false)
 
 const itemForm = ref({
   productoId: '',
@@ -505,6 +520,94 @@ const resetPrestamoForm = () => {
     colaboradorNombre: '',
     observaciones: '',
     detalles: []
+  }
+}
+
+const findProductByBarcode = (rawValue) => {
+  const normalized = String(rawValue || '').trim().toLowerCase()
+  if (!normalized) {
+    return null
+  }
+
+  return availableProducts.value.find((producto) => {
+    const codigo = String(producto.codigoBarras || producto.codigo || '').trim().toLowerCase()
+    return codigo && codigo === normalized
+  }) || null
+}
+
+const handleScannedBarcode = async (decodedText) => {
+  const producto = findProductByBarcode(decodedText)
+  if (!producto) {
+    formError.value = `No se encontro producto para el codigo: ${decodedText}`
+    return
+  }
+
+  itemForm.value.productoId = producto.id
+  formError.value = ''
+  toastMessage.value = `Producto detectado: ${producto.nombre}`
+  showToast.value = true
+}
+
+const openBarcodeScanner = async () => {
+  formError.value = ''
+
+  if (!Capacitor?.isNativePlatform?.()) {
+    formError.value = 'El escaneo con camara solo funciona en la app instalada.'
+    return
+  }
+
+  if (isScanningBarcode.value) {
+    return
+  }
+
+  isScanningBarcode.value = true
+
+  try {
+    const { supported } = await BarcodeScanner.isSupported()
+    if (!supported) {
+      formError.value = 'Este dispositivo no soporta escaneo de codigos.'
+      return
+    }
+
+    const permissions = await BarcodeScanner.requestPermissions()
+    if (permissions.camera !== 'granted') {
+      formError.value = 'Necesitas permitir el acceso a la camara para escanear.'
+      return
+    }
+
+    if (Capacitor.getPlatform() === 'android') {
+      const moduleStatus = await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable()
+      if (!moduleStatus.available) {
+        await BarcodeScanner.installGoogleBarcodeScannerModule()
+        formError.value = 'Se esta instalando el modulo de escaneo de Google. Vuelve a intentar en unos segundos.'
+        return
+      }
+    }
+
+    const result = await BarcodeScanner.scan({
+      formats: [
+        BarcodeFormat.Code128,
+        BarcodeFormat.Code39,
+        BarcodeFormat.Ean13,
+        BarcodeFormat.Ean8,
+        BarcodeFormat.UpcA,
+        BarcodeFormat.UpcE,
+        BarcodeFormat.Itf
+      ]
+    })
+
+    const firstBarcode = result?.barcodes?.[0]
+    const scannedValue = firstBarcode?.rawValue || firstBarcode?.displayValue || ''
+    if (!scannedValue) {
+      formError.value = 'No se detecto ningun codigo. Intenta de nuevo.'
+      return
+    }
+
+    await handleScannedBarcode(scannedValue)
+  } catch (error) {
+    formError.value = error?.message || 'No se pudo iniciar el escaner.'
+  } finally {
+    isScanningBarcode.value = false
   }
 }
 
@@ -838,6 +941,10 @@ onBeforeRouteLeave(() => {
   text-align: center;
   line-height: 1.2;
   padding: 0.15rem 0.75rem;
+}
+
+.scan-button {
+  margin-top: 0.35rem;
 }
 
 .error-message {
