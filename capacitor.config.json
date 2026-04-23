@@ -1,5 +1,5 @@
 {
   "appId": "com.taller.sistema",
   "appName": "sistematallercas",
-  "webDir": "public"
+  "webDir": "dist"
 }
