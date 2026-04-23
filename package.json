@@ -26,6 +26,8 @@
     "cordova-plugin-bluetooth-serial": "^0.4.7",
     "firebase": "^10.7.0",
     "ionicons": "^7.2.0",
+    "@capacitor/share": "6.0.0",
+    "jsbarcode": "^3.11.6",
     "vue": "^3.4.0",
     "vue-router": "^4.6.4"
   },

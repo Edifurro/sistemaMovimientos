@@ -138,9 +138,9 @@
             fill="outline"
             class="print-barcode-button"
             :disabled="isPrinting"
-            @click="startBarcodePrint"
+            @click="shareLabelToTinyPrint"
           >
-            {{ isPrinting ? 'Imprimiendo...' : 'Imprimir codigo de barras' }}
+            {{ isPrinting ? 'Generando etiqueta...' : 'Imprimir en TinyPrint' }}
           </ion-button>
           <p v-if="printError" class="field-error">{{ printError }}</p>
           </div>
@@ -241,38 +241,6 @@
       </ion-footer>
     </ion-modal>
 
-    <ion-modal
-      :is-open="isPrinterPickerOpen"
-      css-class="printer-picker-modal"
-      @did-dismiss="closePrinterPicker"
-    >
-      <ion-header>
-        <ion-toolbar color="primary">
-          <ion-buttons slot="start">
-            <ion-button @click="closePrinterPicker">Cerrar</ion-button>
-          </ion-buttons>
-          <ion-title>Seleccionar impresora</ion-title>
-        </ion-toolbar>
-      </ion-header>
-      <ion-content class="modal-content">
-        <ion-list v-if="printerDevices.length">
-          <ion-item
-            button
-            v-for="device in printerDevices"
-            :key="getDeviceId(device)"
-            @click="selectPrinter(device)"
-          >
-            <ion-label>
-              <h3>{{ getDeviceLabel(device) }}</h3>
-              <p>{{ getDeviceId(device) }}</p>
-            </ion-label>
-          </ion-item>
-        </ion-list>
-        <div v-else class="empty-state">
-          <p>No hay impresoras emparejadas.</p>
-        </div>
-      </ion-content>
-    </ion-modal>
 
     <!-- Modal de confirmación para eliminar -->
     <ion-alert
@@ -298,18 +266,10 @@ import { ref, onMounted, computed } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { useRouter } from 'vue-router'
 import { Capacitor } from '@capacitor/core'
+import { Share } from '@capacitor/share'
+import JsBarcode from 'jsbarcode'
 import { useProducts } from '../composables/useProducts'
 import { usePrestamos } from '../composables/usePrestamos'
-import {
-  bluetoothIsEnabled,
-  bluetoothList,
-  bluetoothConnect,
-  bluetoothDisconnect,
-  bluetoothWrite,
-  buildCode128Barcode,
-  getDeviceId,
-  getDeviceLabel
-} from '../utils/bluetoothPrinter'
 import {
   IonPage,
   IonHeader,
@@ -354,8 +314,6 @@ const showSaveToast = ref(false)
 const toastMessage = ref('')
 const isPrinting = ref(false)
 const printError = ref('')
-const printerDevices = ref([])
-const isPrinterPickerOpen = ref(false)
 const touched = ref({
   nombre: false,
   stock: false,
@@ -372,6 +330,9 @@ const formData = ref({
   precio: null,
   codigoBarras: ''
 })
+
+const LABEL_WIDTH_PX = 320
+const LABEL_HEIGHT_PX = 160
 
 const generateBarcode = () => {
   const timestamp = Date.now().toString().slice(-8)
@@ -543,56 +504,45 @@ const closeModal = () => {
   resetForm()
 }
 
-const closePrinterPicker = () => {
-  isPrinterPickerOpen.value = false
-}
-
-const openPrinterPicker = (devices) => {
-  printerDevices.value = devices
-  isPrinterPickerOpen.value = true
-}
-
-const printWithDevice = async (device) => {
-  const barcode = (formData.value.codigoBarras || '').trim()
-  if (!barcode) {
-    printError.value = 'El producto no tiene codigo de barras.'
-    return
+const buildLabelDataUrl = (code) => {
+  const canvas = document.createElement('canvas')
+  canvas.width = LABEL_WIDTH_PX
+  canvas.height = LABEL_HEIGHT_PX
+  const ctx = canvas.getContext('2d')
+  if (!ctx) {
+    throw new Error('No se pudo crear el lienzo de impresion.')
   }
 
-  const deviceId = getDeviceId(device)
-  if (!deviceId) {
-    printError.value = 'No se pudo identificar la impresora.'
-    return
-  }
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-  try {
-    isPrinting.value = true
-    await bluetoothConnect(deviceId)
-    const payload = buildCode128Barcode(barcode)
-    await bluetoothWrite(payload)
-    localStorage.setItem('lastPrinterId', deviceId)
-    printError.value = ''
-  } catch (err) {
-    printError.value = err?.message || 'No se pudo imprimir el codigo de barras.'
-  } finally {
-    try {
-      await bluetoothDisconnect()
-    } catch (err) {
-      // Ignorar error de desconexion
-    }
-    isPrinting.value = false
-  }
+  JsBarcode(canvas, code, {
+    format: 'CODE128',
+    displayValue: false,
+    margin: 6,
+    height: 90,
+    width: 2
+  })
+
+  ctx.fillStyle = '#000000'
+  ctx.font = '16px Arial'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(code, canvas.width / 2, 132)
+
+  return canvas.toDataURL('image/png')
 }
 
-const selectPrinter = async (device) => {
-  closePrinterPicker()
-  await printWithDevice(device)
-}
-
-const startBarcodePrint = async () => {
+const shareLabelToTinyPrint = async () => {
   printError.value = ''
 
   if (!isEditing.value) {
+    return
+  }
+
+  const barcode = (formData.value.codigoBarras || '').trim()
+  if (!barcode) {
+    printError.value = 'El producto no tiene codigo de barras.'
     return
   }
 
@@ -603,33 +553,15 @@ const startBarcodePrint = async () => {
 
   try {
     isPrinting.value = true
-    await bluetoothIsEnabled()
-    const devices = await bluetoothList()
-    const deviceList = Array.isArray(devices) ? devices : []
-
-    if (!deviceList.length) {
-      printError.value = 'No hay impresoras emparejadas.'
-      return
-    }
-
-    const lastPrinterId = localStorage.getItem('lastPrinterId')
-    const lastMatch = lastPrinterId
-      ? deviceList.find((device) => getDeviceId(device) === lastPrinterId)
-      : null
-
-    if (lastMatch) {
-      await printWithDevice(lastMatch)
-      return
-    }
-
-    if (deviceList.length === 1) {
-      await printWithDevice(deviceList[0])
-      return
-    }
-
-    openPrinterPicker(deviceList)
+    const dataUrl = buildLabelDataUrl(barcode)
+    await Share.share({
+      title: 'Etiqueta de producto',
+      text: barcode,
+      url: dataUrl,
+      dialogTitle: 'Compartir etiqueta con TinyPrint'
+    })
   } catch (err) {
-    printError.value = err?.message || 'No se pudo acceder al Bluetooth.'
+    printError.value = err?.message || 'No se pudo generar la etiqueta.'
   } finally {
     isPrinting.value = false
   }
@@ -641,7 +573,6 @@ const resetPageUiState = () => {
   showDeleteConfirm.value = false
   showSaveToast.value = false
   currentProductId.value = null
-  isPrinterPickerOpen.value = false
   resetForm()
 }
 
@@ -833,11 +764,6 @@ onBeforeRouteLeave(() => {
   --backdrop-opacity: 0.42;
 }
 
-:global(ion-modal.printer-picker-modal) {
-  --width: min(520px, 92vw);
-  --height: min(70vh, 620px);
-  --border-radius: 14px;
-}
 
 :global(ion-modal.product-modal::part(content)) {
   overflow: hidden;
