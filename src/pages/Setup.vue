@@ -23,20 +23,28 @@
 
           <ion-item>
             <ion-label position="floating">Contraseña</ion-label>
-            <ion-input v-model="formData.password" type="password"></ion-input>
+            <ion-input v-model="formData.password" :type="showPassword ? 'text' : 'password'"></ion-input>
+            <ion-button slot="end" fill="clear" @click="showPassword = !showPassword" aria-label="Ver contraseña">
+              <ion-icon :icon="showPassword ? eyeOff : eye"></ion-icon>
+            </ion-button>
           </ion-item>
 
           <ion-item>
             <ion-label position="floating">Confirmar Contraseña</ion-label>
-            <ion-input v-model="formData.passwordConfirm" type="password"></ion-input>
+            <ion-input v-model="formData.passwordConfirm" :type="showPasswordConfirm ? 'text' : 'password'"></ion-input>
+            <ion-button slot="end" fill="clear" @click="showPasswordConfirm = !showPasswordConfirm" aria-label="Ver confirmar contraseña">
+              <ion-icon :icon="showPasswordConfirm ? eyeOff : eye"></ion-icon>
+            </ion-button>
           </ion-item>
 
-          <div v-if="error" class="alert alert-danger">{{ error }}</div>
+          <div v-if="localError || error" class="alert alert-danger">{{ localError || error }}</div>
 
-          <ion-button expand="block" @click="handleSetup" :disabled="loading">
+          <ion-button expand="block" @click="handleSetup" :disabled="loading || !isValid">
             <ion-spinner v-if="loading" name="circles"></ion-spinner>
             {{ loading ? 'Creando...' : 'Crear Usuario' }}
           </ion-button>
+
+          <ion-toast :is-open="showToast" :message="toastMessage" color="danger" duration="2800" @did-dismiss="showToast = false" />
         </div>
       </div>
     </ion-content>
@@ -44,7 +52,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 import {
@@ -57,8 +65,10 @@ import {
   IonLabel,
   IonInput,
   IonButton,
-  IonSpinner
+  IonSpinner,
+  IonIcon
 } from '@ionic/vue'
+import { eye, eyeOff } from 'ionicons/icons'
 
 const router = useRouter()
 const { createFirstUser, loading, error } = useAuth()
@@ -70,14 +80,27 @@ const formData = ref({
   passwordConfirm: ''
 })
 
-const handleSetup = async () => {
-  if (!formData.value.nombre || !formData.value.email || !formData.value.password) {
-    alert('Por favor complete todos los campos')
-    return
-  }
+const localError = ref('')
+const toastMessage = ref('')
+const showToast = ref(false)
+const showPassword = ref(false)
+const showPasswordConfirm = ref(false)
 
-  if (formData.value.password !== formData.value.passwordConfirm) {
-    alert('Las contraseñas no coinciden')
+const isValid = computed(() => {
+  const nombre = String(formData.value.nombre || '').trim()
+  const email = String(formData.value.email || '').trim()
+  const pass = String(formData.value.password || '')
+  const passConfirm = String(formData.value.passwordConfirm || '')
+  // Validación mínima: nombre presente, email corto, pass >=6 y coincidan
+  return nombre.length > 1 && email.length > 3 && pass.length >= 6 && pass === passConfirm
+})
+
+const handleSetup = async () => {
+  localError.value = ''
+  if (!isValid.value) {
+    localError.value = 'Completa todos los campos y asegúrate que las contraseñas coincidan (mín 6 caracteres).'
+    toastMessage.value = localError.value
+    showToast.value = true
     return
   }
 
@@ -90,6 +113,8 @@ const handleSetup = async () => {
     router.push('/login')
   } catch (err) {
     console.error('Error en setup:', err)
+    toastMessage.value = error.value || 'No se pudo crear el usuario.'
+    showToast.value = true
   }
 }
 </script>

@@ -47,6 +47,9 @@
             <ion-icon slot="start" :icon="add"></ion-icon>
             Nuevo Producto
           </ion-button>
+          <ion-button color="tertiary" fill="outline" @click="openQuickStockScanner">
+            Ajuste rápido (scanner)
+          </ion-button>
         </div>
 
         <div v-if="loading" class="loading-state">
@@ -129,17 +132,22 @@
             <ion-input
               v-model="formData.codigoBarras"
               type="text"
+              readonly
+              disabled
               :legacy="true"
             ></ion-input>
           </ion-item>
+          <p class="field-hint">El código de barras se genera automáticamente y no puede editarse.</p>
           <ion-button
             v-if="isEditing"
             expand="block"
             fill="outline"
             class="print-barcode-button"
             :disabled="isPrinting"
+            color="primary"
             @click="shareLabelToTinyPrint"
           >
+            <ion-icon slot="start" :icon="print"></ion-icon>
             {{ isPrinting ? 'Generando etiqueta...' : 'Imprimir en TinyPrint' }}
           </ion-button>
           <p v-if="printError" class="field-error">{{ printError }}</p>
@@ -190,36 +198,6 @@
             </div>
           </div>
 
-          <div class="form-card">
-            <ion-item>
-              <ion-label position="floating">Imagen del Producto (URL)</ion-label>
-              <ion-input
-                v-model="formData.imagenUrl"
-                type="url"
-                :legacy="true"
-              ></ion-input>
-            </ion-item>
-
-            <div class="image-upload-field">
-              <label class="section-label" for="product-image-file">o Seleccionar Archivo</label>
-              <input
-                id="product-image-file"
-                type="file"
-                accept="image/*"
-                @change="handleImageFileChange"
-              >
-              <p class="field-hint">Se mostrara una vista previa local de la imagen seleccionada.</p>
-            </div>
-
-            <div v-if="selectedImagePreview || formData.imagenUrl" class="image-preview-wrap">
-              <img
-                :src="selectedImagePreview || formData.imagenUrl"
-                alt="Vista previa de imagen"
-                class="image-preview"
-              >
-            </div>
-          </div>
-
           <div v-if="modalError || error" class="error-message">
             {{ modalError || error }}
           </div>
@@ -258,6 +236,58 @@
       :duration="1800"
       @did-dismiss="showSaveToast = false"
     ></ion-toast>
+
+    <ion-toast
+      :is-open="showPrintToast"
+      :message="printToastMessage"
+      :color="printToastColor"
+      position="top"
+      :duration="2000"
+      @did-dismiss="showPrintToast = false"
+    ></ion-toast>
+
+    <!-- Quick stock modal -->
+    <ion-modal :is-open="quickModalOpen" css-class="quick-stock-modal" @did-dismiss="() => { quickModalOpen = false }">
+      <ion-header>
+        <ion-toolbar color="primary">
+          <ion-buttons slot="start">
+            <ion-button @click="quickModalOpen = false">Cerrar</ion-button>
+          </ion-buttons>
+          <ion-title>Ajuste rápido de stock</ion-title>
+        </ion-toolbar>
+      </ion-header>
+      <ion-content>
+        <div class="modal-form">
+          <div v-if="quickScannerError" class="error-message">{{ quickScannerError }}</div>
+          <div v-if="quickProduct">
+            <h3>{{ quickProduct.nombre }}</h3>
+            <p>Código: {{ quickProduct.codigoBarras || '-' }}</p>
+            <p>Stock actual: {{ quickProduct.stock || 0 }}</p>
+
+            <ion-item>
+              <ion-label>Tipo</ion-label>
+              <ion-segment
+                :value="quickAdjust"
+                @ionChange="quickAdjust = $event.detail.value || 'add'"
+              >
+                <ion-segment-button value="add">Entrada (+)</ion-segment-button>
+                <ion-segment-button value="subtract">Salida (-)</ion-segment-button>
+              </ion-segment>
+            </ion-item>
+
+            <ion-item>
+              <ion-label position="stacked">Cantidad</ion-label>
+              <ion-input v-model.number="quickCantidad" type="number" min="1" :legacy="true"></ion-input>
+            </ion-item>
+
+            <ion-button expand="block" @click="applyQuickStockAdjustment">Confirmar ajuste</ion-button>
+          </div>
+          <div v-else class="empty-state">
+            <p>Escanea un código para seleccionar un producto.</p>
+          </div>
+        </div>
+      </ion-content>
+    </ion-modal>
   </ion-page>
   </template>
 
@@ -266,10 +296,12 @@ import { ref, onMounted, computed } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { useRouter } from 'vue-router'
 import { Capacitor } from '@capacitor/core'
+import { BarcodeFormat, BarcodeScanner } from '@capacitor-mlkit/barcode-scanning'
 import { Directory, Filesystem } from '@capacitor/filesystem'
 import { Share } from '@capacitor/share'
 import JsBarcode from 'jsbarcode'
 import { useProducts } from '../composables/useProducts'
+import { useMovimientos } from '../composables/useMovimientos'
 import { usePrestamos } from '../composables/usePrestamos'
 import {
   IonPage,
@@ -293,15 +325,18 @@ import {
   IonTextarea,
   IonRadioGroup,
   IonRadio,
+  IonSegment,
+  IonSegmentButton,
   IonSpinner,
   IonAlert,
   IonToast,
   onIonViewWillLeave
 } from '@ionic/vue'
-import { add, checkmarkCircle, apps, home, cube, people, swapHorizontal } from 'ionicons/icons'
+import { add, checkmarkCircle, apps, home, cube, people, swapHorizontal, print } from 'ionicons/icons'
 
 const router = useRouter()
 const { products, loading, error, createProduct, getProducts, updateProduct, deleteProduct: deleteProductAPI } = useProducts()
+const { logMovimiento } = useMovimientos()
 const { getPrestamos } = usePrestamos()
 
 const isModulesMenuOpen = ref(false)
@@ -315,13 +350,16 @@ const showSaveToast = ref(false)
 const toastMessage = ref('')
 const isPrinting = ref(false)
 const printError = ref('')
+const showPrintToast = ref(false)
+const printToastMessage = ref('')
+const printToastColor = ref('success')
 const touched = ref({
   nombre: false,
   stock: false,
   precio: false
 })
-const selectedImagePreview = ref('')
 const loanedStockMap = ref({})
+const sessionGeneratedCodes = ref(new Set())
 
 const formData = ref({
   nombre: '',
@@ -338,7 +376,29 @@ const LABEL_RENDER_SCALE = 3
 
 const generateBarcode = () => {
   // Codigo numerico de 8 digitos para mejorar lectura en escaner termico.
-  return Math.floor(10000000 + Math.random() * 90000000).toString()
+  // Validar unicidad contra codigos existentes en BD y en sesion actual.
+  const existingCodes = new Set([
+    ...sessionGeneratedCodes.value,
+    ...products.value.map(p => p.codigoBarras).filter(Boolean)
+  ])
+
+  let codigo = ''
+  let attempts = 0
+  const maxAttempts = 20
+
+  while (attempts < maxAttempts) {
+    codigo = Math.floor(10000000 + Math.random() * 90000000).toString()
+    if (!existingCodes.has(codigo)) {
+      sessionGeneratedCodes.value.add(codigo)
+      return codigo
+    }
+    attempts++
+  }
+
+  // Si fallamos 20 intentos, usar timestamp como fallback para garantizar unicidad
+  codigo = Math.floor(10000000 + (Date.now() % 90000000)).toString()
+  sessionGeneratedCodes.value.add(codigo)
+  return codigo
 }
 
 const resetForm = () => {
@@ -356,10 +416,8 @@ const resetForm = () => {
     tipo: 'RECURSO',
     stock: 0,
     precio: null,
-    codigoBarras: '',
-    imagenUrl: ''
+    codigoBarras: ''
   }
-  selectedImagePreview.value = ''
 }
 
 const setTouched = (field) => {
@@ -492,10 +550,8 @@ const openEditProductModal = (product) => {
     tipo: product.tipo,
     stock: product.stock,
     precio: product.precio || null,
-    codigoBarras: product.codigoBarras || '',
-    imagenUrl: product.imagenUrl || ''
+    codigoBarras: product.codigoBarras || ''
   }
-  selectedImagePreview.value = product.imagenUrl || ''
   isModalOpen.value = true
 }
 
@@ -596,6 +652,7 @@ const buildLabelFileUri = async (code) => {
 
 const shareLabelToTinyPrint = async () => {
   printError.value = ''
+  showPrintToast.value = false
 
   if (!isEditing.value) {
     return
@@ -615,14 +672,29 @@ const shareLabelToTinyPrint = async () => {
   try {
     isPrinting.value = true
     const fileUri = await buildLabelFileUri(barcode)
+    
     await Share.share({
       title: 'Etiqueta de producto',
       text: barcode,
       files: [fileUri],
       dialogTitle: 'Compartir etiqueta con TinyPrint'
     })
+    
+    // Share completado exitosamente
+    printToastMessage.value = `Etiqueta enviada a TinyPrint - ${barcode}`
+    printToastColor.value = 'success'
+    showPrintToast.value = true
   } catch (err) {
-    printError.value = err?.message || 'No se pudo generar la etiqueta.'
+    // Usuario canceló o error
+    const errorMsg = err?.message || 'No se pudo generar la etiqueta.'
+    
+    // Solo mostrar toast si es un error real, no cancelación
+    if (!errorMsg.includes('cancel') && !errorMsg.includes('dismiss')) {
+      printError.value = errorMsg
+      printToastMessage.value = errorMsg
+      printToastColor.value = 'danger'
+      showPrintToast.value = true
+    }
   } finally {
     isPrinting.value = false
   }
@@ -635,6 +707,195 @@ const resetPageUiState = () => {
   showSaveToast.value = false
   currentProductId.value = null
   resetForm()
+}
+
+// Quick stock scanner state
+const isQuickScannerBusy = ref(false)
+const isQuickScannerInstalling = ref(false)
+const quickScannerError = ref('')
+const quickModalOpen = ref(false)
+const quickProduct = ref(null)
+const quickAdjust = ref('add') // 'add' or 'subtract'
+const quickCantidad = ref(1)
+
+const SCANNER_TIMEOUT_MS = 15000
+const DEBOUNCE_DELAY_MS = 800
+const MODULE_INSTALL_TIMEOUT_MS = 20000
+const MODULE_INSTALL_POLL_MS = 1000
+
+const ensureGoogleScannerModuleQuick = async () => {
+  const moduleStatus = await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable()
+  if (moduleStatus.available) return true
+
+  isQuickScannerInstalling.value = true
+  quickScannerError.value = 'Instalando modulo de escaneo de Google...'
+  await BarcodeScanner.installGoogleBarcodeScannerModule()
+
+  const started = Date.now()
+  while (Date.now() - started < MODULE_INSTALL_TIMEOUT_MS) {
+    const status = await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable()
+    if (status.available) {
+      isQuickScannerInstalling.value = false
+      quickScannerError.value = ''
+      return true
+    }
+    await new Promise((r) => setTimeout(r, MODULE_INSTALL_POLL_MS))
+  }
+
+  isQuickScannerInstalling.value = false
+  quickScannerError.value = 'La instalacion del modulo sigue en progreso, intenta de nuevo en unos segundos.'
+  return false
+}
+
+const handleQuickScannedBarcode = async (decodedText) => {
+  quickScannerError.value = ''
+  const code = String(decodedText || '').trim()
+  if (!code) {
+    quickScannerError.value = 'Codigo invalido detectado.'
+    return
+  }
+
+  // buscar en productos por codigoBarras
+  const found = products.value.find((p) => String(p.codigoBarras || '').trim() === code)
+  if (!found) {
+    quickScannerError.value = `No se encontro producto para el codigo ${code}`
+    return
+  }
+
+  quickProduct.value = found
+  quickCantidad.value = 1
+  quickAdjust.value = 'add'
+  quickModalOpen.value = true
+}
+
+const openQuickStockScanner = async () => {
+  quickScannerError.value = ''
+  if (isQuickScannerBusy.value) return
+
+  if (!Capacitor?.isNativePlatform?.()) {
+    quickScannerError.value = 'El escaneo solo funciona en la app instalada.'
+    return
+  }
+
+  isQuickScannerBusy.value = true
+  try {
+    const { supported } = await BarcodeScanner.isSupported()
+    if (!supported) {
+      quickScannerError.value = 'Este dispositivo no soporta escaneo de codigos.'
+      return
+    }
+
+    const permissions = await BarcodeScanner.requestPermissions()
+    if (permissions.camera !== 'granted') {
+      quickScannerError.value = 'Necesitas permitir acceso a la camara.'
+      return
+    }
+
+    if (Capacitor.getPlatform() === 'android') {
+      const moduleReady = await ensureGoogleScannerModuleQuick()
+      if (!moduleReady) return
+    }
+
+    let scanTimeout = false
+    let scannerTimeoutId = setTimeout(() => {
+      scanTimeout = true
+      BarcodeScanner.stopScan().catch(() => {})
+      quickScannerError.value = 'Tiempo de escaneo agotado (15s).'
+      isQuickScannerBusy.value = false
+    }, SCANNER_TIMEOUT_MS)
+
+    const result = await BarcodeScanner.scan({
+      formats: [
+        BarcodeFormat.Code128,
+        BarcodeFormat.Code39,
+        BarcodeFormat.Ean13,
+        BarcodeFormat.Ean8,
+        BarcodeFormat.UpcA,
+        BarcodeFormat.UpcE,
+        BarcodeFormat.Itf
+      ]
+    })
+
+    if (scannerTimeoutId) {
+      clearTimeout(scannerTimeoutId)
+      scannerTimeoutId = null
+    }
+
+    if (scanTimeout) return
+
+    const first = result?.barcodes?.[0]
+    const val = first?.rawValue || first?.displayValue || ''
+    if (!val) {
+      quickScannerError.value = 'No se detecto ningun codigo.'
+      return
+    }
+
+    await handleQuickScannedBarcode(val)
+  } catch (err) {
+    const msg = err?.message || ''
+    if (!msg.includes('cancel') && !msg.includes('dismiss') && !msg.includes('timeout')) {
+      quickScannerError.value = err?.message || 'No se pudo iniciar el escaner.'
+    }
+  } finally {
+    isQuickScannerBusy.value = false
+    await new Promise((r) => setTimeout(r, DEBOUNCE_DELAY_MS))
+  }
+}
+
+const applyQuickStockAdjustment = async () => {
+  quickScannerError.value = ''
+  if (!quickProduct.value) return
+  const cantidad = Number(quickCantidad.value)
+  if (!Number.isInteger(cantidad) || cantidad <= 0) {
+    quickScannerError.value = 'La cantidad debe ser un entero mayor a 0.'
+    return
+  }
+
+  const current = Number(quickProduct.value.stock || 0)
+  let next = current
+  if (quickAdjust.value === 'add') {
+    next = current + cantidad
+  } else {
+    next = current - cantidad
+    if (next < 0) {
+      quickScannerError.value = 'Operacion invalida: el stock no puede quedar negativo.'
+      return
+    }
+  }
+
+  try {
+    await updateProduct(quickProduct.value.id, { stock: next })
+    // Registrar movimiento en la colección 'movimientos' para auditoría
+    try {
+      const userJSON = localStorage.getItem('user')
+      const usuario = userJSON ? JSON.parse(userJSON) : null
+      const usuarioId = usuario?.uid || usuario?.id || null
+      const usuarioNombre = usuario?.nombre || usuario?.email || 'Usuario'
+      await logMovimiento({
+        productoId: quickProduct.value.id,
+        productoNombre: quickProduct.value.nombre,
+        cantidad: quickAdjust.value === 'add' ? cantidad : -cantidad,
+        tipo: quickAdjust.value === 'add' ? 'entrada' : 'salida',
+        motivo: 'Ajuste rapido',
+        usuarioId,
+        usuarioNombre
+      })
+    } catch (mErr) {
+      // no bloquear la operación principal si falla el registro, pero loguear
+      console.warn('No se pudo registrar movimiento:', mErr)
+    }
+    await refreshProductsAndLoanedStock()
+    quickModalOpen.value = false
+    quickProduct.value = null
+    await showSaveToastFn(`Stock actualizado: ${next}`)
+  } catch (err) {
+    quickScannerError.value = err?.message || 'No se pudo actualizar el stock.'
+  }
+}
+
+const showSaveToastFn = async (message) => {
+  toastMessage.value = message
+  showSaveToast.value = true
 }
 
 const normalizeProductPayload = () => {
@@ -653,31 +914,8 @@ const normalizeProductPayload = () => {
     tipo,
     stock: Number.isFinite(stock) ? stock : 0,
     precio: Number.isFinite(precio) ? precio : null,
-    codigoBarras: (formData.value.codigoBarras || '').trim() || generateBarcode(),
-    imagenUrl: formData.value.imagenUrl?.trim() || ''
+    codigoBarras: (formData.value.codigoBarras || '').trim() || generateBarcode()
   }
-}
-
-const handleImageFileChange = (event) => {
-  const file = event?.target?.files?.[0]
-  if (!file) {
-    return
-  }
-
-  if (!file.type.startsWith('image/')) {
-    modalError.value = 'El archivo seleccionado no es una imagen valida.'
-    return
-  }
-
-  const reader = new FileReader()
-  reader.onload = () => {
-    selectedImagePreview.value = reader.result
-    formData.value.imagenUrl = reader.result
-  }
-  reader.onerror = () => {
-    modalError.value = 'No se pudo leer la imagen seleccionada.'
-  }
-  reader.readAsDataURL(file)
 }
 
 const saveProduct = async () => {
@@ -885,31 +1123,6 @@ onBeforeRouteLeave(() => {
   margin: 0.35rem 0 0;
   color: #6b7280;
   font-size: 0.8rem;
-}
-
-.image-upload-field {
-  border: 1px dashed #d1d5db;
-  border-radius: 8px;
-  padding: 0.75rem;
-}
-
-.image-upload-field input[type='file'] {
-  width: 100%;
-}
-
-.image-preview-wrap {
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 0.5rem;
-  background: #f9fafb;
-}
-
-.image-preview {
-  display: block;
-  width: 100%;
-  max-height: 220px;
-  object-fit: contain;
-  border-radius: 6px;
 }
 
 .modal-footer-actions {

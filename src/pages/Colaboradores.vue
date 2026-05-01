@@ -164,16 +164,19 @@
               <ion-label position="stacked">Cargo</ion-label>
               <ion-input v-model="formData.cargo" type="text" :legacy="true"></ion-input>
             </ion-item>
+            <p v-if="validationErrors.cargo" class="field-error">{{ validationErrors.cargo }}</p>
 
             <ion-item>
               <ion-label position="stacked">Departamento</ion-label>
               <ion-input v-model="formData.departamento" type="text" :legacy="true"></ion-input>
             </ion-item>
+            <p v-if="validationErrors.departamento" class="field-error">{{ validationErrors.departamento }}</p>
 
             <ion-item>
               <ion-label position="stacked">Telefono</ion-label>
               <ion-input v-model="formData.telefono" type="tel" :legacy="true"></ion-input>
             </ion-item>
+            <p v-if="validationErrors.telefono" class="field-error">{{ validationErrors.telefono }}</p>
 
             <ion-item>
               <ion-label position="stacked">Descripcion</ion-label>
@@ -184,6 +187,7 @@
                 placeholder="Ejemplo: Encargado de corte y apoyo en inventario"
               ></ion-textarea>
             </ion-item>
+            <p v-if="validationErrors.descripcion" class="field-error">{{ validationErrors.descripcion }}</p>
           </div>
 
           <div v-if="formError" class="error-message">{{ formError }}</div>
@@ -398,6 +402,10 @@ const inactiveCount = computed(() => colaboradores.value.filter((c) => c.activo 
 const validateForm = () => {
   const errors = {}
   const nombre = String(formData.value.nombre || '').trim()
+  const cargo = String(formData.value.cargo || '').trim()
+  const departamento = String(formData.value.departamento || '').trim()
+  const telefono = String(formData.value.telefono || '').trim()
+  const descripcion = String(formData.value.descripcion || '').trim()
 
   const codigo = String(formData.value.codigoEmpleado || '').trim()
   if (!codigo) {
@@ -405,6 +413,31 @@ const validateForm = () => {
   }
   if (!nombre) {
     errors.nombre = 'El nombre es obligatorio.'
+  } else if (nombre.length < 3) {
+    errors.nombre = 'El nombre debe tener al menos 3 caracteres.'
+  } else if (nombre.length > 80) {
+    errors.nombre = 'El nombre no debe exceder 80 caracteres.'
+  }
+
+  if (cargo && cargo.length > 60) {
+    errors.cargo = 'El cargo no debe exceder 60 caracteres.'
+  }
+
+  if (departamento && departamento.length > 60) {
+    errors.departamento = 'El departamento no debe exceder 60 caracteres.'
+  }
+
+  if (telefono) {
+    const normalizedTelefono = telefono.replace(/[\s()-]/g, '')
+    if (!/^[0-9+]+$/.test(normalizedTelefono)) {
+      errors.telefono = 'El telefono solo puede contener numeros, espacios, +, paréntesis o guiones.'
+    } else if (normalizedTelefono.length < 7 || normalizedTelefono.length > 20) {
+      errors.telefono = 'El telefono debe tener entre 7 y 20 caracteres.'
+    }
+  }
+
+  if (descripcion.length > 250) {
+    errors.descripcion = 'La descripcion no debe exceder 250 caracteres.'
   }
 
   validationErrors.value = errors
@@ -462,6 +495,12 @@ const openEditModal = (colab) => {
   isModalOpen.value = true
 }
 
+const confirmStatusChange = (colab) => {
+  const nextValue = colab.activo === false
+  const actionLabel = nextValue ? 'activar' : 'inactivar'
+  return window.confirm(`¿Seguro que deseas ${actionLabel} a ${colab.nombre}?`)
+}
+
 const closeModal = () => {
   isModalOpen.value = false
   isGeneratingCode.value = false
@@ -510,6 +549,10 @@ const saveColaborador = async () => {
 
 const toggleActivo = async (colab) => {
   const nextValue = colab.activo === false
+  if (!confirmStatusChange(colab)) {
+    return
+  }
+
   try {
     await updateColaborador(colab.id, { activo: nextValue })
     await getColaboradores()
@@ -532,6 +575,10 @@ const closeDetailModal = () => {
 const inactivateFromDetail = async () => {
   if (!selectedColaborador.value) return
 
+  if (!confirmStatusChange(selectedColaborador.value)) {
+    return
+  }
+
   try {
     await updateColaborador(selectedColaborador.value.id, { activo: false })
     await getColaboradores()
@@ -547,6 +594,10 @@ const inactivateFromDetail = async () => {
 
 const activateFromDetail = async () => {
   if (!selectedColaborador.value) return
+
+  if (!confirmStatusChange(selectedColaborador.value)) {
+    return
+  }
 
   try {
     await updateColaborador(selectedColaborador.value.id, { activo: true })
@@ -564,6 +615,8 @@ const activateFromDetail = async () => {
 const handleRefresh = async (event) => {
   try {
     await getColaboradores()
+  } catch (err) {
+    await showToast(err?.message || 'No se pudo actualizar la lista.', 'danger')
   } finally {
     event?.target?.complete()
   }

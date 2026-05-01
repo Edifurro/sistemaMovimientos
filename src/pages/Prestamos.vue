@@ -52,6 +52,54 @@
           {{ error }}
         </div>
 
+        <div class="filters-card">
+          <ion-item>
+            <ion-label position="stacked">Filtrar por colaborador</ion-label>
+            <ion-select v-model="listFilters.colaboradorId" placeholder="Todos los colaboradores">
+              <ion-select-option value="">Todos los colaboradores</ion-select-option>
+              <ion-select-option
+                v-for="colaborador in colaboradoresFilterOptions"
+                :key="colaborador.id"
+                :value="colaborador.id"
+              >
+                {{ colaborador.nombre }}
+              </ion-select-option>
+            </ion-select>
+          </ion-item>
+
+          <ion-item>
+            <ion-label position="stacked">Fecha inicio (préstamo)</ion-label>
+            <ion-input
+              v-model="listFilters.fechaInicio"
+              type="date"
+              :legacy="true"
+            ></ion-input>
+          </ion-item>
+
+          <ion-item>
+            <ion-label position="stacked">Fecha fin (préstamo)</ion-label>
+            <ion-input
+              v-model="listFilters.fechaFin"
+              type="date"
+              :legacy="true"
+            ></ion-input>
+          </ion-item>
+
+          <ion-button
+            expand="block"
+            fill="clear"
+            size="small"
+            class="clear-filters-button"
+            @click="clearListFilters"
+          >
+            Limpiar filtros
+          </ion-button>
+
+          <p v-if="hasInvalidDateRange" class="error-message filter-error">
+            La fecha inicio no puede ser mayor que la fecha fin.
+          </p>
+        </div>
+
         <ion-segment class="prestamos-segment" v-model="selectedSegment" @ion-change="onSegmentChange" scrollable>
           <ion-segment-button value="activos">
             <ion-label>Activos</ion-label>
@@ -152,13 +200,20 @@
               expand="block"
               fill="outline"
               class="scan-button"
-              :disabled="isScanningBarcode"
+              :disabled="isScanningBarcode || isInstallingScannerModule"
               @click="openBarcodeScanner"
             >
               <ion-icon slot="start" :icon="scan"></ion-icon>
-              {{ isScanningBarcode ? 'Abriendo camara...' : 'Escanear codigo de barras' }}
+              {{ scannerButtonLabel }}
             </ion-button>
-            <p class="field-hint">Usa la camara trasera para seleccionar producto por codigo.</p>
+            <ion-item lines="none" class="batch-scan-toggle">
+              <ion-label>Modo lote</ion-label>
+              <ion-toggle v-model="isBatchScanMode"></ion-toggle>
+            </ion-item>
+            <p class="field-hint">
+              {{ isBatchScanMode ? 'Modo lote activo: escanea y agrega productos consecutivamente.' : 'Usa la camara trasera para seleccionar producto por codigo.' }}
+            </p>
+            <div v-if="scannerError" class="error-message">{{ scannerError }}</div>
 
             <ion-item>
               <ion-label position="stacked">Cantidad</ion-label>
@@ -399,6 +454,7 @@ import {
   IonSearchbar,
   IonTextarea,
   IonInput,
+  IonToggle,
   IonToast,
   onIonViewWillLeave
 } from '@ionic/vue'
@@ -421,6 +477,16 @@ const toastMessage = ref('')
 const isDetailModalOpen = ref(false)
 const selectedPrestamoDetail = ref(null)
 const isScanningBarcode = ref(false)
+const isInstallingScannerModule = ref(false)
+const isBatchScanMode = ref(false)
+const scannerError = ref('')
+let scannerTimeoutId = null
+let scannerDebounceActive = false
+
+const SCANNER_TIMEOUT_MS = 15000
+const DEBOUNCE_DELAY_MS = 800
+const MODULE_INSTALL_TIMEOUT_MS = 20000
+const MODULE_INSTALL_POLL_MS = 1000
 
 const itemForm = ref({
   productoId: '',
@@ -438,26 +504,103 @@ const newPrestamo = ref({
   detalles: []
 })
 
+const listFilters = ref({
+  colaboradorId: '',
+  fechaInicio: '',
+  fechaFin: ''
+})
+
 const expectedReturnLabel = computed(() => {
   const date = new Date(Date.now() + 24 * 60 * 60 * 1000)
   return `${date.toLocaleDateString('es-MX')} ${date.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}`
 })
 
+const colaboradoresFilterOptions = computed(() => {
+  return [...colaboradores.value]
+    .sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es'))
+})
+
+const hasInvalidDateRange = computed(() => {
+  const { fechaInicio, fechaFin } = listFilters.value
+  if (!fechaInicio || !fechaFin) {
+    return false
+  }
+
+  const inicioTs = new Date(`${fechaInicio}T00:00:00`).getTime()
+  const finTs = new Date(`${fechaFin}T23:59:59.999`).getTime()
+  return inicioTs > finTs
+})
+
 const filteredPrestamos = computed(() => {
-  const nowIso = new Date().toISOString()
+  const nowTs = Date.now()
+  let resultado = []
 
   if (selectedSegment.value === 'activos') {
-    return prestamos.value.filter((p) => p.estado === 'activo')
+    resultado = prestamos.value.filter((p) => {
+      if (p.estado !== 'activo') {
+        return false
+      }
+
+      if (!p.fechaDevolucionEsperada) {
+        return true
+      }
+
+      return new Date(p.fechaDevolucionEsperada).getTime() >= nowTs
+    })
+  } else if (selectedSegment.value === 'devueltos') {
+    resultado = prestamos.value.filter((p) => p.estado === 'devuelto')
+  } else {
+    resultado = prestamos.value.filter((p) => {
+      if (p.estado !== 'activo' || !p.fechaDevolucionEsperada) {
+        return false
+      }
+
+      return new Date(p.fechaDevolucionEsperada).getTime() < nowTs
+    })
   }
 
-  if (selectedSegment.value === 'devueltos') {
-    return prestamos.value.filter((p) => p.estado === 'devuelto')
+  const { colaboradorId, fechaInicio, fechaFin } = listFilters.value
+
+  if (colaboradorId) {
+    resultado = resultado.filter((p) => p.colaboradorId === colaboradorId)
   }
 
-  return prestamos.value.filter(
-    (p) => p.estado === 'activo' && p.fechaDevolucionEsperada && p.fechaDevolucionEsperada < nowIso
-  )
+  if (hasInvalidDateRange.value) {
+    return []
+  }
+
+  if (!fechaInicio && !fechaFin) {
+    return resultado
+  }
+
+  const inicioTs = fechaInicio ? new Date(`${fechaInicio}T00:00:00`).getTime() : null
+  const finTs = fechaFin ? new Date(`${fechaFin}T23:59:59.999`).getTime() : null
+
+  return resultado.filter((p) => {
+    const prestamoTs = new Date(p.createdAt || '').getTime()
+    if (Number.isNaN(prestamoTs)) {
+      return false
+    }
+
+    if (inicioTs !== null && prestamoTs < inicioTs) {
+      return false
+    }
+
+    if (finTs !== null && prestamoTs > finTs) {
+      return false
+    }
+
+    return true
+  })
 })
+
+const clearListFilters = () => {
+  listFilters.value = {
+    colaboradorId: '',
+    fechaInicio: '',
+    fechaFin: ''
+  }
+}
 
 const availableColaboradores = computed(() => {
   return colaboradores.value.filter((c) => c.activo !== false)
@@ -469,6 +612,18 @@ const availableProducts = computed(() => {
 
 const canSavePrestamo = computed(() => {
   return Boolean(newPrestamo.value.colaboradorId) && (newPrestamo.value.detalles || []).length > 0
+})
+
+const scannerButtonLabel = computed(() => {
+  if (isInstallingScannerModule.value) {
+    return 'Instalando modulo de escaneo...'
+  }
+
+  if (isScanningBarcode.value) {
+    return isBatchScanMode.value ? 'Escaneando en modo lote...' : 'Abriendo camara...'
+  }
+
+  return isBatchScanMode.value ? 'Iniciar escaneo en lote' : 'Escanear codigo de barras'
 })
 
 const selectedProductLabel = computed(() => {
@@ -512,9 +667,11 @@ const canAddItem = computed(() => {
 
 const resetPrestamoForm = () => {
   formError.value = ''
+  scannerError.value = ''
   itemForm.value = { productoId: '', cantidad: 1 }
   productSearchTerm.value = ''
   isProductPickerOpen.value = false
+  isBatchScanMode.value = false
   newPrestamo.value = {
     colaboradorId: '',
     colaboradorNombre: '',
@@ -538,76 +695,182 @@ const findProductByBarcode = (rawValue) => {
 const handleScannedBarcode = async (decodedText) => {
   const producto = findProductByBarcode(decodedText)
   if (!producto) {
-    formError.value = `No se encontro producto para el codigo: ${decodedText}`
+    scannerError.value = `No se encontro producto para el codigo: ${decodedText}`
     return
   }
 
-  itemForm.value.productoId = producto.id
+  scannerError.value = ''
   formError.value = ''
+  itemForm.value.productoId = producto.id
+  if (isBatchScanMode.value) {
+    addProductFromScan(producto)
+    return
+  }
+
   toastMessage.value = `Producto detectado: ${producto.nombre}`
   showToast.value = true
 }
 
-const openBarcodeScanner = async () => {
-  formError.value = ''
+const addProductFromScan = (producto) => {
+  const stockDisponible = Number(producto.stock || 0)
+  const existingIndex = newPrestamo.value.detalles.findIndex((item) => item.productoId === producto.id)
+  const cantidadActual = existingIndex >= 0
+    ? Number(newPrestamo.value.detalles[existingIndex].cantidad || 0)
+    : 0
 
-  if (!Capacitor?.isNativePlatform?.()) {
-    formError.value = 'El escaneo con camara solo funciona en la app instalada.'
+  if (cantidadActual + 1 > stockDisponible) {
+    scannerError.value = `Stock insuficiente para ${producto.nombre}. Disponible: ${stockDisponible}`
+    return false
+  }
+
+  if (existingIndex >= 0) {
+    newPrestamo.value.detalles[existingIndex].cantidad = cantidadActual + 1
+  } else {
+    newPrestamo.value.detalles.push({
+      productoId: producto.id,
+      nombre: producto.nombre,
+      tipo: producto.tipo,
+      cantidad: 1,
+      cantidadDevuelta: 0
+    })
+  }
+
+  itemForm.value = { ...itemForm.value, cantidad: 1 }
+  toastMessage.value = `${producto.nombre} agregado al prestamo (x1)`
+  showToast.value = true
+  return true
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+const ensureGoogleScannerModule = async () => {
+  const moduleStatus = await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable()
+  if (moduleStatus.available) {
+    return true
+  }
+
+  isInstallingScannerModule.value = true
+  scannerError.value = 'Instalando modulo de escaneo de Google...'
+  await BarcodeScanner.installGoogleBarcodeScannerModule()
+
+  const startedAt = Date.now()
+  while (Date.now() - startedAt < MODULE_INSTALL_TIMEOUT_MS) {
+    const status = await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable()
+    if (status.available) {
+      scannerError.value = ''
+      toastMessage.value = 'Modulo de escaneo instalado correctamente.'
+      showToast.value = true
+      isInstallingScannerModule.value = false
+      return true
+    }
+
+    await sleep(MODULE_INSTALL_POLL_MS)
+  }
+
+  scannerError.value = 'La instalacion del modulo sigue en progreso. Intenta escanear de nuevo en unos segundos.'
+  isInstallingScannerModule.value = false
+  return false
+}
+
+const openBarcodeScanner = async () => {
+  scannerError.value = ''
+
+  // Prevenir múltiples clicks rápidos (debounce)
+  if (isScanningBarcode.value || scannerDebounceActive || isInstallingScannerModule.value) {
     return
   }
 
-  if (isScanningBarcode.value) {
+  if (!Capacitor?.isNativePlatform?.()) {
+    scannerError.value = 'El escaneo con camara solo funciona en la app instalada.'
     return
   }
 
   isScanningBarcode.value = true
+  scannerDebounceActive = true
 
   try {
     const { supported } = await BarcodeScanner.isSupported()
     if (!supported) {
-      formError.value = 'Este dispositivo no soporta escaneo de codigos.'
+      scannerError.value = 'Este dispositivo no soporta escaneo de codigos.'
       return
     }
 
     const permissions = await BarcodeScanner.requestPermissions()
     if (permissions.camera !== 'granted') {
-      formError.value = 'Necesitas permitir el acceso a la camara para escanear.'
+      scannerError.value = 'Necesitas permitir el acceso a la camara para escanear.'
       return
     }
 
     if (Capacitor.getPlatform() === 'android') {
-      const moduleStatus = await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable()
-      if (!moduleStatus.available) {
-        await BarcodeScanner.installGoogleBarcodeScannerModule()
-        formError.value = 'Se esta instalando el modulo de escaneo de Google. Vuelve a intentar en unos segundos.'
+      const moduleReady = await ensureGoogleScannerModule()
+      if (!moduleReady) {
         return
       }
     }
 
-    const result = await BarcodeScanner.scan({
-      formats: [
-        BarcodeFormat.Code128,
-        BarcodeFormat.Code39,
-        BarcodeFormat.Ean13,
-        BarcodeFormat.Ean8,
-        BarcodeFormat.UpcA,
-        BarcodeFormat.UpcE,
-        BarcodeFormat.Itf
-      ]
-    })
+    let keepScanning = true
+    while (keepScanning) {
+      let scanTimeout = false
+      scannerTimeoutId = setTimeout(() => {
+        scanTimeout = true
+        BarcodeScanner.stopScan().catch(() => {})
+        scannerError.value = 'Tiempo de escaneo agotado (15s). Intenta de nuevo.'
+        isScanningBarcode.value = false
+      }, SCANNER_TIMEOUT_MS)
 
-    const firstBarcode = result?.barcodes?.[0]
-    const scannedValue = firstBarcode?.rawValue || firstBarcode?.displayValue || ''
-    if (!scannedValue) {
-      formError.value = 'No se detecto ningun codigo. Intenta de nuevo.'
-      return
+      const result = await BarcodeScanner.scan({
+        formats: [
+          BarcodeFormat.Code128,
+          BarcodeFormat.Code39,
+          BarcodeFormat.Ean13,
+          BarcodeFormat.Ean8,
+          BarcodeFormat.UpcA,
+          BarcodeFormat.UpcE,
+          BarcodeFormat.Itf
+        ]
+      })
+
+      if (scannerTimeoutId) {
+        clearTimeout(scannerTimeoutId)
+        scannerTimeoutId = null
+      }
+
+      if (scanTimeout) {
+        return
+      }
+
+      const firstBarcode = result?.barcodes?.[0]
+      const scannedValue = firstBarcode?.rawValue || firstBarcode?.displayValue || ''
+      if (!scannedValue) {
+        scannerError.value = 'No se detecto ningun codigo. Intenta de nuevo.'
+        return
+      }
+
+      await handleScannedBarcode(scannedValue)
+
+      keepScanning = isBatchScanMode.value
+      if (keepScanning) {
+        scannerError.value = 'Modo lote activo: listo para el siguiente escaneo.'
+      }
     }
-
-    await handleScannedBarcode(scannedValue)
   } catch (error) {
-    formError.value = error?.message || 'No se pudo iniciar el escaner.'
+    const errorMsg = error?.message || ''
+    // No mostrar error si fue timeout o cancelación del usuario
+    if (!errorMsg.includes('timeout') && !errorMsg.includes('cancel') && !errorMsg.includes('dismiss')) {
+      scannerError.value = error?.message || 'No se pudo iniciar el escaner.'
+    }
   } finally {
+    // Limpiar timeout si aun existe
+    if (scannerTimeoutId) {
+      clearTimeout(scannerTimeoutId)
+      scannerTimeoutId = null
+    }
+    isInstallingScannerModule.value = false
     isScanningBarcode.value = false
+
+    // Aplicar debounce: no permitir nuevo escaneo durante 800ms
+    await new Promise((resolve) => setTimeout(resolve, DEBOUNCE_DELAY_MS))
+    scannerDebounceActive = false
   }
 }
 
@@ -655,6 +918,7 @@ const isPrestamoVencido = (prestamo) => {
 
 const addItemToPrestamo = () => {
   formError.value = ''
+  scannerError.value = ''
   const producto = availableProducts.value.find((p) => p.id === itemForm.value.productoId)
 
   if (!producto) {
@@ -754,6 +1018,7 @@ const selectProduct = (productoId) => {
 
 const openReturnModal = (prestamo) => {
   formError.value = ''
+  scannerError.value = ''
   selectedPrestamoForReturn.value = prestamo
   const base = {}
   const obs = {}
@@ -784,6 +1049,7 @@ const navigateTo = async (path) => {
 
 const resetPageUiState = () => {
   isModulesMenuOpen.value = false
+  scannerError.value = ''
   closePrestamoModal()
   closeReturnModal()
   closeDetailModal()
@@ -871,6 +1137,21 @@ onBeforeRouteLeave(() => {
   margin-top: 0.25rem;
 }
 
+.filters-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 0.35rem;
+  margin-bottom: 0.8rem;
+}
+
+.clear-filters-button {
+  margin-top: 0.35rem;
+}
+
+.filter-error {
+  margin: 0.35rem 0 0.15rem;
+}
+
 .prestamos-list {
   margin-top: 1rem;
 }
@@ -933,6 +1214,7 @@ onBeforeRouteLeave(() => {
 
 .add-item-button {
   margin-top: 0.35rem;
+  margin-bottom: 0.35rem;
   height: 44px;
   font-weight: 600;
   letter-spacing: 0.3px;
@@ -945,6 +1227,12 @@ onBeforeRouteLeave(() => {
 
 .scan-button {
   margin-top: 0.35rem;
+}
+
+.batch-scan-toggle {
+  margin-top: 0.25rem;
+  --padding-start: 0;
+  --inner-padding-end: 0;
 }
 
 .error-message {
@@ -960,6 +1248,10 @@ onBeforeRouteLeave(() => {
   margin: -0.35rem 0 0;
   color: #5d7182;
   font-size: 0.78rem;
+}
+
+.items-card .field-hint {
+  margin: 0.2rem 0 0;
 }
 
 :global(ion-modal.prestamo-modal) {

@@ -54,6 +54,14 @@ const normalizeRole = (role) => {
   return String(role || '').trim().toLowerCase()
 }
 
+const persistUsuarioToStorage = (usuario) => {
+  if (usuario) {
+    localStorage.setItem('user', JSON.stringify(usuario))
+  } else {
+    localStorage.removeItem('user')
+  }
+}
+
 export function useAuth() {
   const isAuthenticated = computed(() => !!currentUser.value)
   const setupCacheKey = 'setupCompleted'
@@ -164,6 +172,7 @@ export function useAuth() {
       const { user } = await signInWithEmailAndPassword(auth, normalizedEmail, normalizedPassword)
 
       usuario.value = await ensureUserProfile(user)
+      persistUsuarioToStorage(usuario.value)
 
       localStorage.setItem(setupCacheKey, 'true')
       
@@ -202,6 +211,7 @@ export function useAuth() {
       await firebaseSignOut(auth)
       usuario.value = null
       currentUser.value = null
+      persistUsuarioToStorage(null)
     } catch (err) {
       error.value = err.message
       throw err
@@ -214,13 +224,16 @@ export function useAuth() {
         currentUser.value = user
         try {
           usuario.value = await ensureUserProfile(user)
+          persistUsuarioToStorage(usuario.value)
         } catch (err) {
           console.error('Error sincronizando perfil de usuario:', err)
           usuario.value = null
+          persistUsuarioToStorage(null)
         }
       } else {
         currentUser.value = null
         usuario.value = null
+        persistUsuarioToStorage(null)
       }
       callback?.(user)
     })

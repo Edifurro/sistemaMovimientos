@@ -18,15 +18,20 @@
 
           <ion-item>
             <ion-label position="floating">Contraseña</ion-label>
-            <ion-input v-model="formData.password" type="password"></ion-input>
+            <ion-input v-model="formData.password" :type="showPassword ? 'text' : 'password'"></ion-input>
+            <ion-button slot="end" fill="clear" @click="showPassword = !showPassword" aria-label="Ver contraseña">
+              <ion-icon :icon="showPassword ? eyeOff : eye"></ion-icon>
+            </ion-button>
           </ion-item>
 
-          <div v-if="error" class="alert alert-danger">{{ error }}</div>
+          <div v-if="localError || error" class="alert alert-danger">{{ localError || error }}</div>
 
-          <ion-button expand="block" @click="handleLogin" :disabled="loading">
+          <ion-button expand="block" @click="handleLogin" :disabled="loading || !isValid">
             <ion-spinner v-if="loading" name="circles"></ion-spinner>
             {{ loading ? 'Iniciando...' : 'Iniciar Sesión' }}
           </ion-button>
+
+          <ion-toast :is-open="showToast" :message="toastMessage" color="danger" duration="2500" @did-dismiss="showToast = false" />
         </div>
       </div>
     </ion-content>
@@ -34,7 +39,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 import {
@@ -47,8 +52,10 @@ import {
   IonLabel,
   IonInput,
   IonButton,
-  IonSpinner
+  IonSpinner,
+  IonIcon
 } from '@ionic/vue'
+import { eye, eyeOff } from 'ionicons/icons'
 
 const router = useRouter()
 const { login, loading, error } = useAuth()
@@ -58,9 +65,24 @@ const formData = ref({
   password: ''
 })
 
+const localError = ref('')
+const toastMessage = ref('')
+const showToast = ref(false)
+const showPassword = ref(false)
+
+const isValid = computed(() => {
+  const email = String(formData.value.email || '').trim()
+  const pass = String(formData.value.password || '')
+  // validación mínima: email y contraseña al menos 6 caracteres
+  return email.length > 3 && pass.length >= 6
+})
+
 const handleLogin = async () => {
-  if (!formData.value.email || !formData.value.password) {
-    alert('Por favor complete todos los campos')
+  localError.value = ''
+  if (!isValid.value) {
+    localError.value = 'Completa correo y contraseña (mínimo 6 caracteres).'
+    toastMessage.value = localError.value
+    showToast.value = true
     return
   }
 
@@ -69,6 +91,9 @@ const handleLogin = async () => {
     router.push('/dashboard')
   } catch (err) {
     console.error('Error en login:', err)
+    // useAuth.error ya muestra mensaje mapeado; además abrir toast
+    toastMessage.value = error.value || 'Error iniciando sesión.'
+    showToast.value = true
   }
 }
 </script>

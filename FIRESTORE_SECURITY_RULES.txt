@@ -63,5 +63,12 @@ service cloud.firestore {
       allow read: if isAuth();
       allow write: if false; // Los reportes se generan en backend
     }
+
+    // Colección: movimientos (historial de ajustes y acciones sobre inventario)
+    match /movimientos/{movimientoId} {
+      allow read: if isAuth();
+      allow create: if isAdmin();
+      allow update, delete: if false;
+    }
   }
 }

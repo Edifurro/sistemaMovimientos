@@ -99,6 +99,22 @@
             </div>
             <p v-else class="insight-empty">Sin préstamos registrados.</p>
           </div>
+          <div class="insight-card">
+            <div class="insight-header">
+              <h2>Movimientos recientes</h2>
+            </div>
+            <div v-if="movimientosRecientes.length" class="insight-list">
+              <div v-for="m in movimientosRecientes" :key="m.id" class="insight-row">
+                <div class="insight-main">
+                  <span class="insight-title">{{ m.tipo === 'salida' ? 'Salida' : 'Entrada' }} • {{ m.motivo || '' }}</span>
+                    <span class="insight-sub">Producto: {{ m.productoNombre || m.productoId }}</span>
+                  <span class="insight-sub">Usuario: {{ m.usuarioNombre || m.usuarioId || '—' }}</span>
+                </div>
+                <div class="insight-value">{{ m.cantidad }}</div>
+              </div>
+            </div>
+            <p v-else class="insight-empty">Sin movimientos recientes.</p>
+          </div>
         </div>
       </div>
     </ion-content>
@@ -112,6 +128,7 @@ import { useAuth } from '../composables/useAuth'
 import { useProducts } from '../composables/useProducts'
 import { useColaboradores } from '../composables/useColaboradores'
 import { usePrestamos } from '../composables/usePrestamos'
+import { useMovimientos } from '../composables/useMovimientos'
 import {
   IonPage,
   IonHeader,
@@ -133,6 +150,7 @@ const { logout } = useAuth()
 const { getProducts } = useProducts()
 const { getColaboradores } = useColaboradores()
 const { getPrestamos } = usePrestamos()
+const { getMovimientos } = useMovimientos()
 
 const usuario = ref(null)
 const productCount = ref(0)
@@ -141,6 +159,7 @@ const prestamoCount = ref(0)
 const isModulesMenuOpen = ref(false)
 const lowStockProducts = ref([])
 const latestPrestamo = ref(null)
+const movimientosRecientes = ref([])
 const lowStockThreshold = 5
 
 onMounted(async () => {
@@ -167,6 +186,12 @@ onMounted(async () => {
       const bDate = new Date(b.createdAt || 0).getTime()
       return bDate - aDate
     })[0] || null
+    // movimientos recientes
+    try {
+      movimientosRecientes.value = await getMovimientos({ limit: 6 })
+    } catch (mvErr) {
+      console.warn('No se pudieron cargar movimientos recientes:', mvErr)
+    }
   } catch (error) {
     console.error('Error cargando datos:', error)
   }

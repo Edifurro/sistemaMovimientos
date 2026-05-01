@@ -54,6 +54,14 @@ const createDuplicateCodeError = () => {
   return err
 }
 
+const sortByNombre = (rows = []) => {
+  return [...rows].sort((a, b) => {
+    const left = String(a?.nombre || '')
+    const right = String(b?.nombre || '')
+    return left.localeCompare(right, 'es', { sensitivity: 'base' })
+  })
+}
+
 export function useColaboradores() {
   const getNextColaboradorCode = async () => {
     try {
@@ -132,10 +140,10 @@ export function useColaboradores() {
       }
       
       const snapshot = await getDocs(q)
-      colaboradores.value = snapshot.docs.map(doc => ({
+      colaboradores.value = sortByNombre(snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
-      }))
+      })))
       
       return colaboradores.value
     } catch (err) {
