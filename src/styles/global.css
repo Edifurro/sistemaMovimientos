@@ -165,6 +165,29 @@ body {
   background-color: rgba(95, 143, 184, 0.12);
 }
 
+/* Layout estándar para encabezados de páginas (title + subtitle) */
+.page-container {
+  padding: 1rem;
+}
+
+.page-header {
+  margin-bottom: 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.page-header h2 {
+  margin: 0 0 0.35rem;
+}
+
+.subtitle {
+  margin: 0;
+  color: #64748b;
+}
+
 .alert {
   padding: 1rem;
   border-radius: 0.375rem;
@@ -210,4 +233,67 @@ body {
 .badge-warning {
   background-color: #e5eef5;
   color: #3a546c;
+}
+
+/* Estilo para botones de cierre en modales: icono + fondo sutil para destacar sobre toolbars */
+ion-button.close-modal-btn {
+  --background: rgba(255, 255, 255, 0.09);
+  --color: #ffffff;
+  --border-radius: 8px;
+  font-weight: 700;
+}
+
+/* Margen izquierdo para títulos en toolbars dentro de modales */
+ion-modal ion-toolbar ion-title {
+  padding-left: 1rem;
+}
+
+/* Badges de estado en Prestamos: usar mismos colores que InventarioColaboradores */
+ion-badge.prestamo-badge--devuelto {
+  background: #dcfce7; /* verde claro */
+  color: #166534; /* verde oscuro */
+  font-weight: 700;
+  border-radius: 9999px;
+  padding: 0.18rem 0.6rem;
+}
+
+ion-badge.prestamo-badge--activo {
+  background: #fef3c7; /* amarillo claro */
+  color: #92400e; /* amarillo oscuro */
+  font-weight: 700;
+  border-radius: 9999px;
+  padding: 0.18rem 0.6rem;
+}
+
+ion-badge.prestamo-badge--vencido {
+  background: #fee2e2; /* rojo claro */
+  color: #991b1b; /* rojo oscuro */
+  font-weight: 700;
+  border-radius: 9999px;
+  padding: 0.18rem 0.6rem;
+}
+
+/* Badges para Inventario Colaboradores */
+ion-badge.inventory-badge--complete {
+  background: #dcfce7; /* verde claro */
+  color: #166534; /* verde oscuro */
+  font-weight: 700;
+  border-radius: 9999px;
+  padding: 0.18rem 0.6rem;
+}
+
+ion-badge.inventory-badge--incomplete {
+  background: #fef3c7; /* amarillo claro */
+  color: #92400e; /* amarillo oscuro */
+  font-weight: 700;
+  border-radius: 9999px;
+  padding: 0.18rem 0.6rem;
+}
+
+ion-badge.inventory-badge--missing {
+  background: #fee2e2; /* rojo claro */
+  color: #991b1b; /* rojo oscuro */
+  font-weight: 700;
+  border-radius: 9999px;
+  padding: 0.18rem 0.6rem;
 }

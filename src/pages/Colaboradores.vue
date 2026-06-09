@@ -41,6 +41,14 @@
             <ion-icon slot="start" :icon="swapHorizontal"></ion-icon>
             <ion-label>Préstamos</ion-label>
           </ion-item>
+          <ion-item button @click="navigateTo('/inventario-colaboradores')">
+            <ion-icon slot="start" :icon="clipboardOutline"></ion-icon>
+            <ion-label>Inventario de colaboradores</ion-label>
+          </ion-item>
+          <ion-item button @click="navigateTo('/inventario-bodega')">
+            <ion-icon slot="start" :icon="cube"></ion-icon>
+            <ion-label>Inventario Bodega</ion-label>
+          </ion-item>
         </ion-list>
       </ion-content>
     </ion-popover>
@@ -52,7 +60,6 @@
       <div class="page-container">
         <div class="page-header">
           <h2>Gestión de Colaboradores</h2>
-          <p class="subtitle">Administra datos, estado activo y contacto del equipo.</p>
         </div>
 
         <div class="summary-row">
@@ -130,10 +137,13 @@
     >
       <ion-header>
         <ion-toolbar color="primary">
-          <ion-buttons slot="start">
-            <ion-button @click="closeModal">Cancelar</ion-button>
-          </ion-buttons>
           <ion-title>{{ isEditing ? 'Editar Colaborador' : 'Nuevo Colaborador' }}</ion-title>
+          <ion-buttons slot="end">
+            <ion-button @click="closeModal" class="close-modal-btn">
+              <ion-icon slot="start" :icon="closeOutline"></ion-icon>
+              Cerrar
+            </ion-button>
+          </ion-buttons>
         </ion-toolbar>
       </ion-header>
       <ion-content class="modal-content">
@@ -210,10 +220,13 @@
     >
       <ion-header>
         <ion-toolbar color="primary">
-          <ion-buttons slot="start">
-            <ion-button @click="closeDetailModal">Cerrar</ion-button>
-          </ion-buttons>
           <ion-title>Detalle del Colaborador</ion-title>
+          <ion-buttons slot="end">
+            <ion-button @click="closeDetailModal" class="close-modal-btn">
+              <ion-icon slot="start" :icon="closeOutline"></ion-icon>
+              Cerrar
+            </ion-button>
+          </ion-buttons>
         </ion-toolbar>
       </ion-header>
       <ion-content class="modal-content">
@@ -318,7 +331,7 @@ import {
   onIonViewWillLeave,
   toastController
 } from '@ionic/vue'
-import { add, apps, home, cube, people, swapHorizontal } from 'ionicons/icons'
+import { add, apps, home, cube, people, swapHorizontal, clipboardOutline, closeOutline } from 'ionicons/icons'
 
 const router = useRouter()
 const {

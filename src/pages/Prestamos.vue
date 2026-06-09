@@ -35,6 +35,14 @@
             <ion-icon slot="start" :icon="swapHorizontal"></ion-icon>
             <ion-label>Préstamos</ion-label>
           </ion-item>
+          <ion-item button @click="navigateTo('/inventario-colaboradores')">
+            <ion-icon slot="start" :icon="clipboardOutline"></ion-icon>
+            <ion-label>Inventario de colaboradores</ion-label>
+          </ion-item>
+          <ion-item button @click="navigateTo('/inventario-bodega')">
+            <ion-icon slot="start" :icon="cube"></ion-icon>
+            <ion-label>Inventario Bodega</ion-label>
+          </ion-item>
         </ion-list>
       </ion-content>
     </ion-popover>
@@ -129,13 +137,12 @@
                 >
                   Devolver
                 </ion-button>
-                <ion-badge :color="getBadgeColor(prestamo.estado)">
+                <ion-badge :class="getPrestamoBadgeClass(prestamo)">
                   {{ prestamo.estado }}
                 </ion-badge>
                 <ion-badge
                   v-if="isPrestamoVencido(prestamo)"
-                  color="danger"
-                  class="overdue-badge"
+                  :class="'prestamo-badge--vencido overdue-badge'"
                 >
                   Vencido
                 </ion-badge>
@@ -157,10 +164,13 @@
     >
       <ion-header>
         <ion-toolbar color="primary">
-          <ion-buttons slot="start">
-            <ion-button @click="closePrestamoModal">Cancelar</ion-button>
-          </ion-buttons>
           <ion-title>Nuevo Préstamo</ion-title>
+          <ion-buttons slot="end">
+            <ion-button @click="closePrestamoModal" class="close-modal-btn">
+              <ion-icon slot="start" :icon="closeOutline"></ion-icon>
+              Cerrar
+            </ion-button>
+          </ion-buttons>
         </ion-toolbar>
       </ion-header>
       <ion-content>
@@ -265,10 +275,13 @@
     >
       <ion-header>
         <ion-toolbar color="primary">
-          <ion-buttons slot="start">
-            <ion-button @click="closeProductPicker">Cerrar</ion-button>
-          </ion-buttons>
           <ion-title>Seleccionar producto</ion-title>
+          <ion-buttons slot="end">
+            <ion-button @click="closeProductPicker" class="close-modal-btn">
+              <ion-icon slot="start" :icon="closeOutline"></ion-icon>
+              Cerrar
+            </ion-button>
+          </ion-buttons>
         </ion-toolbar>
       </ion-header>
       <ion-content>
@@ -306,10 +319,13 @@
     <ion-modal :is-open="isReturnModalOpen" css-class="prestamo-modal" @did-dismiss="closeReturnModal">
       <ion-header>
         <ion-toolbar color="primary">
-          <ion-buttons slot="start">
-            <ion-button @click="closeReturnModal">Cancelar</ion-button>
-          </ion-buttons>
           <ion-title>Registrar Devolución</ion-title>
+          <ion-buttons slot="end">
+            <ion-button @click="closeReturnModal" class="close-modal-btn">
+              <ion-icon slot="start" :icon="closeOutline"></ion-icon>
+              Cerrar
+            </ion-button>
+          </ion-buttons>
         </ion-toolbar>
       </ion-header>
       <ion-content>
@@ -322,22 +338,42 @@
                   <h3>{{ item.nombre }}</h3>
                   <p>Pendiente: {{ getCantidadPendiente(item) }}</p>
                 </ion-label>
-                <ion-input
-                  v-model.number="returnItems[item.productoId]"
-                  type="number"
-                  min="0"
-                  :max="getCantidadPendiente(item)"
-                  style="max-width: 100px;"
-                ></ion-input>
-              </ion-item>
-              <ion-item v-for="item in selectedPrestamoForReturn.detalles" :key="`${item.productoId}-obs`">
-                <ion-label position="stacked">Observaciones de {{ item.nombre }}</ion-label>
-                <ion-textarea
-                  v-model="returnObservaciones[item.productoId]"
-                  :legacy="true"
-                  rows="2"
-                  placeholder="Estado del producto devuelto"
-                ></ion-textarea>
+
+                <div style="display:flex; flex-direction:column; align-items:flex-end; margin-left:8px; gap:6px;">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <ion-text color="medium" style="font-size:0.8rem; white-space:nowrap;">Devuelta — se reingresa al inventario</ion-text>
+                    <ion-input
+                      v-model.number="returnItems[item.productoId]"
+                      type="number"
+                      min="0"
+                      :max="getCantidadPendiente(item)"
+                      placeholder="Devuelta"
+                      style="max-width: 100px;"
+                    ></ion-input>
+                  </div>
+
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <ion-text color="medium" style="font-size:0.8rem; white-space:nowrap;">Consumida — no se repone</ion-text>
+                    <ion-input
+                      v-model.number="returnConsumed[item.productoId]"
+                      type="number"
+                      min="0"
+                      :max="getCantidadPendiente(item)"
+                      placeholder="Consumida"
+                      style="max-width: 100px;"
+                    ></ion-input>
+                  </div>
+                </div>
+
+                <div style="width:100%">
+                  <ion-label position="stacked">Observaciones de {{ item.nombre }}</ion-label>
+                  <ion-textarea
+                    v-model="returnObservaciones[item.productoId]"
+                    :legacy="true"
+                    rows="2"
+                    placeholder="Estado del producto devuelto"
+                  ></ion-textarea>
+                </div>
               </ion-item>
             </ion-list>
           </div>
@@ -357,10 +393,13 @@
     <ion-modal :is-open="isDetailModalOpen" css-class="prestamo-modal" @did-dismiss="closeDetailModal">
       <ion-header>
         <ion-toolbar color="primary">
-          <ion-buttons slot="start">
-            <ion-button @click="closeDetailModal">Cerrar</ion-button>
-          </ion-buttons>
           <ion-title>Detalle de Préstamo</ion-title>
+          <ion-buttons slot="end">
+            <ion-button @click="closeDetailModal" class="close-modal-btn">
+              <ion-icon slot="start" :icon="closeOutline"></ion-icon>
+              Cerrar
+            </ion-button>
+          </ion-buttons>
         </ion-toolbar>
       </ion-header>
       <ion-content>
@@ -393,6 +432,13 @@
             </ion-label>
           </ion-item>
 
+          <ion-item>
+            <ion-label>
+              <h3>Observaciones</h3>
+              <p>{{ selectedPrestamoDetail.observaciones || '-' }}</p>
+            </ion-label>
+          </ion-item>
+
           <div class="items-list">
             <h3>Productos</h3>
             <ion-list>
@@ -402,7 +448,8 @@
               >
                 <ion-label>
                   <h3>{{ item.nombre }}</h3>
-                  <p>Cantidad: {{ item.cantidad }} · Devuelto: {{ item.cantidadDevuelta || 0 }}</p>
+                  <p>Cantidad: {{ item.cantidad }} · Devuelto: {{ item.cantidadDevuelta || 0 }} · Consumido: {{ item.cantidadConsumida || 0 }}</p>
+                  <p v-if="getDevolucionComentario(item.productoId)" style="margin-top:0.35rem;"><strong>Comentario:</strong> {{ getDevolucionComentario(item.productoId) }}</p>
                 </ion-label>
               </ion-item>
             </ion-list>
@@ -458,7 +505,7 @@ import {
   IonToast,
   onIonViewWillLeave
 } from '@ionic/vue'
-import { add, apps, home, cube, people, swapHorizontal, scan } from 'ionicons/icons'
+import { add, apps, home, cube, people, swapHorizontal, scan, clipboardOutline, closeOutline } from 'ionicons/icons'
 
 const router = useRouter()
 const { prestamos, loading, error, createPrestamo, getPrestamos, devolverPrestamo } = usePrestamos()
@@ -496,6 +543,7 @@ const productSearchTerm = ref('')
 
 const returnItems = ref({})
 const returnObservaciones = ref({})
+const returnConsumed = ref({})
 
 const newPrestamo = ref({
   colaboradorId: '',
@@ -893,10 +941,19 @@ const getBadgeColor = (estado) => {
   return estado === 'activo' ? 'warning' : estado === 'devuelto' ? 'success' : 'danger'
 }
 
+const getPrestamoBadgeClass = (prestamo) => {
+  if (!prestamo) return ''
+  const estado = String(prestamo.estado || '').toLowerCase()
+  if (estado === 'devuelto') return 'prestamo-badge--devuelto'
+  if (estado === 'vencido') return 'prestamo-badge--vencido'
+  if (estado === 'activo') return 'prestamo-badge--activo'
+  return ''
+}
+
 const getPrestamoResumen = (prestamo) => {
   const totalItems = (prestamo.detalles || []).length
   const totalPendiente = (prestamo.detalles || []).reduce((acc, item) => {
-    const pendiente = Math.max(0, Number(item.cantidad || 0) - Number(item.cantidadDevuelta || 0))
+    const pendiente = Math.max(0, Number(item.cantidad || 0) - Number(item.cantidadDevuelta || 0) - Number(item.cantidadConsumida || 0))
     return acc + pendiente
   }, 0)
 
@@ -1022,12 +1079,15 @@ const openReturnModal = (prestamo) => {
   selectedPrestamoForReturn.value = prestamo
   const base = {}
   const obs = {}
+  const consumed = {}
   ;(prestamo.detalles || []).forEach((item) => {
     base[item.productoId] = 0
     obs[item.productoId] = ''
+    consumed[item.productoId] = 0
   })
   returnItems.value = base
   returnObservaciones.value = obs
+  returnConsumed.value = consumed
   isReturnModalOpen.value = true
 }
 
@@ -1036,6 +1096,7 @@ const closeReturnModal = () => {
   selectedPrestamoForReturn.value = null
   returnItems.value = {}
   returnObservaciones.value = {}
+  returnConsumed.value = {}
 }
 
 const openModulesMenu = () => {
@@ -1057,7 +1118,14 @@ const resetPageUiState = () => {
 }
 
 const getCantidadPendiente = (item) => {
-  return Math.max(0, Number(item.cantidad || 0) - Number(item.cantidadDevuelta || 0))
+  return Math.max(0, Number(item.cantidad || 0) - Number(item.cantidadDevuelta || 0) - Number(item.cantidadConsumida || 0))
+}
+
+const getDevolucionComentario = (productoId) => {
+  if (!selectedPrestamoDetail || !selectedPrestamoDetail.value) return ''
+  const detallesDev = selectedPrestamoDetail.value.detallesDevolucion || []
+  const found = detallesDev.find(d => d.productoId === productoId)
+  return found ? (found.observacion || found.observaciones || '') : ''
 }
 
 const saveReturn = async () => {
@@ -1070,16 +1138,24 @@ const saveReturn = async () => {
 
     const detallesDevolucion = (prestamo.detalles || []).map((item) => {
       const value = Math.max(0, Number(returnItems.value[item.productoId] || 0))
+      const consumedVal = Math.max(0, Number(returnConsumed.value[item.productoId] || 0))
+      const pendiente = getCantidadPendiente(item)
+
+      // aplicar retornos y consumos sin exceder lo pendiente
+      const cantidadDevuelta = Math.min(value, pendiente)
+      const cantidadConsumida = Math.min(consumedVal, Math.max(0, pendiente - cantidadDevuelta))
+
       return {
         productoId: item.productoId,
-        cantidadDevuelta: Math.min(value, getCantidadPendiente(item)),
+        cantidadDevuelta,
+        cantidadConsumida,
         observacion: returnObservaciones.value[item.productoId] || ''
       }
     })
 
-    const anyReturn = detallesDevolucion.some((d) => d.cantidadDevuelta > 0)
+    const anyReturn = detallesDevolucion.some((d) => d.cantidadDevuelta > 0 || d.cantidadConsumida > 0)
     if (!anyReturn) {
-      formError.value = 'Debes capturar al menos una cantidad para devolver.'
+      formError.value = 'Debes capturar al menos una cantidad para devolver o marcar como consumida.'
       return
     }
 

@@ -14,21 +14,6 @@ service cloud.firestore {
     function isOwner(uid) {
       return request.auth.uid == uid;
     }
-
-    // Obtener perfil del usuario autenticado
-    function userProfile() {
-      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid));
-    }
-
-    // Verificar rol admin, soportando valores historicos (admin/ADMIN)
-    function isAdmin() {
-      return isAuth()
-        && userProfile().exists()
-        && (
-          userProfile().data.rol == 'admin'
-          || userProfile().data.rol == 'ADMIN'
-        );
-    }
     
     // Colección: usuarios (solo el usuario autenticado puede leer su propia información)
     match /usuarios/{uid} {
@@ -42,20 +27,28 @@ service cloud.firestore {
     // Colección: productos (todos los usuarios autenticados pueden leer, solo admin/owner puede escribir)
     match /productos/{productId} {
       allow read: if isAuth();
-      allow create, update, delete: if isAdmin();
+      allow create, update, delete: if isAuth() && (
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol == 'admin'
+      );
     }
     
     // Colección: colaboradores (todos los usuarios autenticados pueden leer)
     match /colaboradores/{colaboradorId} {
       allow read: if isAuth();
-      allow create, update, delete: if isAdmin();
+      allow create, update, delete: if isAuth() && (
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol == 'admin'
+      );
     }
     
     // Colección: prestamos (todos pueden leer, escribir según reglas)
     match /prestamos/{prestamoId} {
       allow read: if isAuth();
-      allow create: if isAdmin();
-      allow update, delete: if isAdmin();
+      allow create: if isAuth() && (
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol == 'admin'
+      );
+      allow update, delete: if isAuth() && (
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol == 'admin'
+      );
     }
     
     // Colección: reportes (solo lectura para usuarios autenticados)
@@ -67,8 +60,34 @@ service cloud.firestore {
     // Colección: movimientos (historial de ajustes y acciones sobre inventario)
     match /movimientos/{movimientoId} {
       allow read: if isAuth();
-      allow create: if isAdmin();
+      allow create: if isAuth() && (
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol == 'admin'
+      );
       allow update, delete: if false;
     }
+    
+    match /inventario_colaboradores/{itemId} {
+  allow read: if isAuth();
+  allow create, update, delete: if isAuth();
+}
+
+    // Reglas simples para el nuevo módulo: inventario_bodega y movimientos_bodega
+    // Colección: inventario_bodega (stock en bodega)
+    match /inventario_bodega/{itemId} {
+      allow read: if isAuth();
+      allow create, update, delete: if isAuth() && (
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol == 'admin'
+      );
+    }
+
+    // Colección: movimientos_bodega (historial de movimientos de bodega)
+    match /movimientos_bodega/{movimientoId} {
+      allow read: if isAuth();
+      allow create: if isAuth() && (
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol == 'admin'
+      );
+      allow update, delete: if false;
+    }
+    
   }
 }

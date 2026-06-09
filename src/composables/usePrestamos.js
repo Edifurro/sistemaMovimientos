@@ -187,33 +187,42 @@ export function usePrestamos() {
 
         const devoluciones = detallesDevolucion || []
         const acumuladoDevolucionPorProducto = {}
+        let huboAccion = false
 
         const detallesActualizados = (prestamoActual.detalles || []).map((item) => {
-          const devolucionItem = devoluciones.find((d) => d.productoId === item.productoId)
-          const retorno = Math.max(0, Number(devolucionItem?.cantidadDevuelta || 0))
+          const devolucionItem = devoluciones.find((d) => d.productoId === item.productoId) || {}
+          const solicitadoRetorno = Math.max(0, Number(devolucionItem.cantidadDevuelta || 0))
+          const solicitadoConsumo = Math.max(0, Number(devolucionItem.cantidadConsumida || 0))
           const yaDevuelto = Math.max(0, Number(item.cantidadDevuelta || 0))
-          const maxPendiente = Math.max(0, Number(item.cantidad || 0) - yaDevuelto)
-          const devolucionAplicada = Math.min(retorno, maxPendiente)
+          const yaConsumido = Math.max(0, Number(item.cantidadConsumida || 0))
+          const maxPendiente = Math.max(0, Number(item.cantidad || 0) - yaDevuelto - yaConsumido)
+
+          const devolucionAplicada = Math.min(solicitadoRetorno, maxPendiente)
+          const consumoAplicado = Math.min(solicitadoConsumo, Math.max(0, maxPendiente - devolucionAplicada))
 
           if (devolucionAplicada > 0) {
             acumuladoDevolucionPorProducto[item.productoId] =
               (acumuladoDevolucionPorProducto[item.productoId] || 0) + devolucionAplicada
           }
 
+          if (devolucionAplicada > 0 || consumoAplicado > 0) {
+            huboAccion = true
+          }
+
           return {
             ...item,
-            cantidadDevuelta: yaDevuelto + devolucionAplicada
+            cantidadDevuelta: yaDevuelto + devolucionAplicada,
+            cantidadConsumida: yaConsumido + consumoAplicado
           }
         })
 
-        const huboDevolucion = Object.values(acumuladoDevolucionPorProducto).some((v) => v > 0)
-        if (!huboDevolucion) {
-          throw new Error('No hay cantidades validas para devolver')
+        if (!huboAccion) {
+          throw new Error('No hay cantidades validas para devolver o marcar como consumidas')
         }
 
         const productosCache = {}
 
-        // 1) Leer primero los productos a reponer
+        // 1) Leer primero los productos a reponer (solo lo devuelto)
         for (const [productoId, cantidadDevuelta] of Object.entries(acumuladoDevolucionPorProducto)) {
           const productoRef = doc(db, 'productos', productoId)
           const productoSnap = await transaction.get(productoRef)
@@ -230,7 +239,7 @@ export function usePrestamos() {
           }
         }
 
-        // 2) Escribir luego de completar todas las lecturas
+        // 2) Escribir luego de completar todas las lecturas (solo reponer lo devuelto)
         for (const productoId of Object.keys(productosCache)) {
           const item = productosCache[productoId]
           transaction.update(item.ref, {
@@ -240,7 +249,7 @@ export function usePrestamos() {
         }
 
         const completo = detallesActualizados.every(
-          (item) => Number(item.cantidadDevuelta || 0) >= Number(item.cantidad || 0)
+          (item) => Number(item.cantidadDevuelta || 0) + Number(item.cantidadConsumida || 0) >= Number(item.cantidad || 0)
         )
 
         transaction.update(prestamoRef, {

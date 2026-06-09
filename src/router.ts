@@ -29,6 +29,15 @@ const routes: Array<RouteRecordRaw> = [
   {
     path: '/prestamos',
     component: () => import('./pages/Prestamos.vue')
+  },
+  {
+    path: '/inventario-colaboradores',
+    component: () => import('./pages/InventarioColaboradores.vue')
+  }
+  ,
+  {
+    path: '/inventario-bodega',
+    component: () => import('./pages/InventarioBodega.vue')
   }
 ]
 

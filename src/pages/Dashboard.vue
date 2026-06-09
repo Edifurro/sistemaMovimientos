@@ -37,6 +37,14 @@
             <ion-icon slot="start" :icon="swapHorizontal"></ion-icon>
             <ion-label>Préstamos</ion-label>
           </ion-item>
+          <ion-item button @click="navigateTo('/inventario-colaboradores')">
+            <ion-icon slot="start" :icon="clipboardOutline"></ion-icon>
+            <ion-label>Inventario de colaboradores</ion-label>
+          </ion-item>
+          <ion-item button @click="navigateTo('/inventario-bodega')">
+            <ion-icon slot="start" :icon="cube"></ion-icon>
+            <ion-label>Inventario Bodega</ion-label>
+          </ion-item>
           <ion-item button @click="navigateTo('/dashboard')">
             <ion-icon slot="start" :icon="home"></ion-icon>
             <ion-label>Inicio</ion-label>
@@ -143,7 +151,7 @@ import {
   IonItem,
   IonLabel
 } from '@ionic/vue'
-import { home, cube, people, swapHorizontal, logOut, apps } from 'ionicons/icons'
+import { home, cube, people, swapHorizontal, logOut, apps, clipboardOutline } from 'ionicons/icons'
 
 const router = useRouter()
 const { logout } = useAuth()

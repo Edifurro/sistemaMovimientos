@@ -35,6 +35,14 @@
             <ion-icon slot="start" :icon="swapHorizontal"></ion-icon>
             <ion-label>Préstamos</ion-label>
           </ion-item>
+          <ion-item button @click="navigateTo('/inventario-colaboradores')">
+            <ion-icon slot="start" :icon="clipboardOutline"></ion-icon>
+            <ion-label>Inventario de colaboradores</ion-label>
+          </ion-item>
+          <ion-item button @click="navigateTo('/inventario-bodega')">
+            <ion-icon slot="start" :icon="cube"></ion-icon>
+            <ion-label>Inventario Bodega</ion-label>
+          </ion-item>
         </ion-list>
       </ion-content>
     </ion-popover>
@@ -52,13 +60,25 @@
           </ion-button>
         </div>
 
+        <div class="search-container">
+          <ion-searchbar
+            v-model="searchTerm"
+            placeholder="Buscar por nombre o código de barras"
+            @ionClear="searchTerm = ''"
+            @ionInput="searchTerm = $event.detail.value || ''"
+            show-clear-button="focus"
+            inputmode="search"
+            enterkeyhint="search"
+          ></ion-searchbar>
+        </div>
+
         <div v-if="loading" class="loading-state">
           <ion-spinner name="circles"></ion-spinner>
           <p>Cargando productos...</p>
         </div>
 
-        <ion-list v-else-if="products.length > 0">
-          <ion-item-sliding v-for="product in products" :key="product.id">
+        <ion-list v-else-if="filteredProducts.length > 0">
+          <ion-item-sliding v-for="product in filteredProducts" :key="product.id">
             <ion-item @click="openEditProductModal(product)">
               <ion-label>
                 <h2>{{ product.nombre }}</h2>
@@ -83,7 +103,7 @@
         </ion-list>
 
         <div v-else class="empty-state">
-          <p>No hay productos registrados</p>
+          <p>{{ searchTerm ? 'No se encontraron productos' : 'No hay productos registrados' }}</p>
         </div>
       </div>
     </ion-content>
@@ -96,14 +116,17 @@
     >
       <ion-header>
         <ion-toolbar color="primary">
-          <ion-buttons slot="start">
-            <ion-button @click="closeModal">Cancelar</ion-button>
-          </ion-buttons>
           <ion-title>{{ isEditing ? 'Editar Producto' : 'Nuevo Producto' }}</ion-title>
           <ion-buttons slot="end">
             <ion-button @click="saveProduct" :color="saveButtonColor" :disabled="!isFormValid || loading">
               <ion-icon v-if="saveSuccess" slot="start" :icon="checkmarkCircle"></ion-icon>
               {{ saveButtonLabelShort }}
+            </ion-button>
+          </ion-buttons>
+          <ion-buttons slot="end">
+            <ion-button @click="closeModal" class="close-modal-btn">
+              <ion-icon slot="start" :icon="closeOutline"></ion-icon>
+              Cerrar
             </ion-button>
           </ion-buttons>
         </ion-toolbar>
@@ -127,17 +150,47 @@
             <ion-textarea v-model="formData.descripcion" rows="3" :legacy="true"></ion-textarea>
           </ion-item>
 
-          <ion-item>
-            <ion-label position="floating">Código de Barras</ion-label>
-            <ion-input
-              v-model="formData.codigoBarras"
-              type="text"
-              readonly
-              disabled
-              :legacy="true"
-            ></ion-input>
-          </ion-item>
-          <p class="field-hint">El código de barras se genera automáticamente y no puede editarse.</p>
+          <div class="barcode-field-container">
+            <ion-item>
+              <ion-label position="floating">Código de Barras</ion-label>
+              <ion-input
+                v-model="formData.codigoBarras"
+                type="text"
+                readonly
+                disabled
+                :legacy="true"
+              ></ion-input>
+            </ion-item>
+            <div class="barcode-button-group">
+              <ion-button
+                v-if="!isEditing"
+                expand="block"
+                fill="outline"
+                class="scan-barcode-button"
+                :disabled="isScanning || isModalScannerBusy"
+                color="primary"
+                @click="openBarcodeScanner"
+              >
+                <ion-icon slot="start" :icon="camera"></ion-icon>
+                {{ isScanning ? 'Escaneando...' : 'Escanear' }}
+              </ion-button>
+              <ion-button
+                v-if="!isEditing"
+                expand="block"
+                fill="outline"
+                class="generate-barcode-button"
+                color="secondary"
+                @click="generateNewBarcode"
+              >
+                <ion-icon slot="start" :icon="refresh"></ion-icon>
+                Generar nuevo
+              </ion-button>
+            </div>
+          </div>
+          <p class="field-hint">
+            Modifica el código escaneando o generando uno nuevo.
+          </p>
+          <p v-if="barcodeError" class="field-error">{{ barcodeError }}</p>
           <ion-button
             v-if="isEditing"
             expand="block"
@@ -250,10 +303,13 @@
     <ion-modal :is-open="quickModalOpen" css-class="quick-stock-modal" @did-dismiss="() => { quickModalOpen = false }">
       <ion-header>
         <ion-toolbar color="primary">
-          <ion-buttons slot="start">
-            <ion-button @click="quickModalOpen = false">Cerrar</ion-button>
-          </ion-buttons>
           <ion-title>Ajuste rápido de stock</ion-title>
+          <ion-buttons slot="end">
+            <ion-button @click="quickModalOpen = false" class="close-modal-btn">
+              <ion-icon slot="start" :icon="closeOutline"></ion-icon>
+              Cerrar
+            </ion-button>
+          </ion-buttons>
         </ion-toolbar>
       </ion-header>
       <ion-content>
@@ -330,19 +386,24 @@ import {
   IonSpinner,
   IonAlert,
   IonToast,
+  IonSearchbar,
   onIonViewWillLeave
 } from '@ionic/vue'
-import { add, checkmarkCircle, apps, home, cube, people, swapHorizontal, print } from 'ionicons/icons'
+import { add, checkmarkCircle, apps, home, cube, people, swapHorizontal, print, camera, refresh, clipboardOutline, closeOutline } from 'ionicons/icons'
 
 const router = useRouter()
 const { products, loading, error, createProduct, getProducts, updateProduct, deleteProduct: deleteProductAPI } = useProducts()
 const { logMovimiento } = useMovimientos()
 const { getPrestamos } = usePrestamos()
 
+const searchTerm = ref('')
 const isModulesMenuOpen = ref(false)
 const isModalOpen = ref(false)
 const isEditing = ref(false)
 const currentProductId = ref(null)
+const isScanning = ref(false)
+const isModalScannerBusy = ref(false)
+const barcodeError = ref('')
 const showDeleteConfirm = ref(false)
 const modalError = ref('')
 const saveSuccess = ref(false)
@@ -405,6 +466,7 @@ const resetForm = () => {
   modalError.value = ''
   saveSuccess.value = false
   printError.value = ''
+  barcodeError.value = ''
   touched.value = {
     nombre: false,
     stock: false,
@@ -517,6 +579,136 @@ const getAvailableStock = (product) => {
   return getRealStock(product)
 }
 
+const filteredProducts = computed(() => {
+  if (!searchTerm.value.trim()) {
+    return products.value
+  }
+  
+  const query = searchTerm.value.toLowerCase().trim()
+  return products.value.filter((product) => {
+    const nombre = (product.nombre || '').toLowerCase()
+    const codigo = (product.codigoBarras || '').toLowerCase()
+    return nombre.includes(query) || codigo.includes(query)
+  })
+})
+
+const isBarcodeUnique = (barcode) => {
+  const trimmed = String(barcode || '').trim()
+  if (!trimmed) return false
+  
+  // Validar contra códigos existentes en BD y en sesión actual
+  const existingCodes = new Set([
+    ...sessionGeneratedCodes.value,
+    ...products.value.map(p => p.codigoBarras).filter(Boolean)
+  ])
+  
+  return !existingCodes.has(trimmed)
+}
+
+const generateNewBarcode = () => {
+  formData.value.codigoBarras = generateBarcode()
+  barcodeError.value = ''
+}
+
+const openBarcodeScanner = async () => {
+  barcodeError.value = ''
+  if (isScanning.value || isModalScannerBusy.value) return
+  if (isEditing.value) return // No permitir escaneo al editar
+
+  if (!Capacitor?.isNativePlatform?.()) {
+    barcodeError.value = 'El escaneo solo funciona en la app instalada.'
+    return
+  }
+
+  isModalScannerBusy.value = true
+  try {
+    const { supported } = await BarcodeScanner.isSupported()
+    if (!supported) {
+      barcodeError.value = 'Este dispositivo no soporta escaneo de códigos.'
+      return
+    }
+
+    const permissions = await BarcodeScanner.requestPermissions()
+    if (permissions.camera !== 'granted') {
+      barcodeError.value = 'Necesitas permitir acceso a la cámara.'
+      return
+    }
+
+    if (Capacitor.getPlatform() === 'android') {
+      const moduleStatus = await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable()
+      if (!moduleStatus.available) {
+        barcodeError.value = 'Instalando módulo de escaneo...'
+        await BarcodeScanner.installGoogleBarcodeScannerModule()
+        
+        // Esperar a que se instale
+        const started = Date.now()
+        while (Date.now() - started < MODULE_INSTALL_TIMEOUT_MS) {
+          const status = await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable()
+          if (status.available) {
+            barcodeError.value = ''
+            break
+          }
+          await new Promise((r) => setTimeout(r, MODULE_INSTALL_POLL_MS))
+        }
+      }
+    }
+
+    isScanning.value = true
+    let scanTimeout = false
+    let scannerTimeoutId = setTimeout(() => {
+      scanTimeout = true
+      BarcodeScanner.stopScan().catch(() => {})
+      barcodeError.value = 'Tiempo de escaneo agotado (15s).'
+      isScanning.value = false
+    }, SCANNER_TIMEOUT_MS)
+
+    const result = await BarcodeScanner.scan({
+      formats: [
+        BarcodeFormat.Code128,
+        BarcodeFormat.Code39,
+        BarcodeFormat.Ean13,
+        BarcodeFormat.Ean8,
+        BarcodeFormat.UpcA,
+        BarcodeFormat.UpcE,
+        BarcodeFormat.Itf
+      ]
+    })
+
+    if (scannerTimeoutId) {
+      clearTimeout(scannerTimeoutId)
+      scannerTimeoutId = null
+    }
+
+    if (scanTimeout) return
+
+    const first = result?.barcodes?.[0]
+    const scannedCode = (first?.rawValue || first?.displayValue || '').trim()
+    
+    if (!scannedCode) {
+      barcodeError.value = 'No se detectó ningún código.'
+      return
+    }
+
+    // Validar que el código sea único
+    if (!isBarcodeUnique(scannedCode)) {
+      barcodeError.value = `El código de barras ${scannedCode} ya existe.`
+      return
+    }
+
+    formData.value.codigoBarras = scannedCode
+    barcodeError.value = ''
+  } catch (err) {
+    const msg = err?.message || ''
+    if (!msg.includes('cancel') && !msg.includes('dismiss') && !msg.includes('timeout')) {
+      barcodeError.value = err?.message || 'No se pudo iniciar el escáner.'
+    }
+  } finally {
+    isScanning.value = false
+    isModalScannerBusy.value = false
+    await new Promise((r) => setTimeout(r, DEBOUNCE_DELAY_MS))
+  }
+}
+
 const refreshProductsAndLoanedStock = async () => {
   const [allProducts, allPrestamos] = await Promise.all([getProducts(), getPrestamos()])
   calculateLoanedStock(allPrestamos)
@@ -537,6 +729,7 @@ const openNewProductModal = () => {
   currentProductId.value = null
   resetForm()
   formData.value.codigoBarras = generateBarcode()
+  barcodeError.value = ''
   isModalOpen.value = true
 }
 
@@ -705,6 +898,7 @@ const resetPageUiState = () => {
   isModalOpen.value = false
   showDeleteConfirm.value = false
   showSaveToast.value = false
+  searchTerm.value = ''
   currentProductId.value = null
   resetForm()
 }
@@ -1017,6 +1211,36 @@ onBeforeRouteLeave(() => {
 .page-header h2 {
   margin: 0;
   flex: 1;
+}
+
+.search-container {
+  margin-bottom: 1rem;
+}
+
+:global(.search-container ion-searchbar) {
+  padding: 0.5rem 0;
+}
+
+.barcode-field-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.barcode-field-container ion-item {
+  flex: 1;
+}
+
+.barcode-button-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.scan-barcode-button,
+.generate-barcode-button {
+  height: 40px;
+  font-weight: 600;
 }
 
 .empty-state,
