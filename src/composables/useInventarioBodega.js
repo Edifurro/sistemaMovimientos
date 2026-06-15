@@ -34,6 +34,19 @@ const mapError = (err) => {
 
 export function useInventarioBodega() {
   const getNextBarcode = async () => {
+    // Intentar generar un codigo numerico de 6 digitos unico
+    const maxAttempts = 20
+    for (let i = 0; i < maxAttempts; i += 1) {
+      const candidate = Math.floor(100000 + Math.random() * 900000).toString()
+      try {
+        const barcode = await ensureUniqueBarcode(candidate, COLLECTION_NAME)
+        return barcode
+      } catch (err) {
+        // seguir intentando
+      }
+    }
+
+    // Fallback al generador por defecto si no se encuentra un numero unico
     return ensureUniqueBarcode('', COLLECTION_NAME)
   }
   const getInventario = async (filters = {}) => {

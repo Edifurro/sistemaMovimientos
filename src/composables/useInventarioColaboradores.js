@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { db } from '../services/firebase'
 import { collection, doc, getDoc, getDocs, orderBy, query, setDoc, updateDoc } from 'firebase/firestore'
+import { deleteDoc } from 'firebase/firestore'
 
 const COLLECTION_NAME = 'inventario_colaboradores'
 const ESTADOS_VALIDOS = ['faltante', 'incompleto', 'completo']
@@ -58,18 +59,10 @@ const mapError = (err) => {
   return err?.message || 'Ocurrio un error al gestionar el inventario de colaboradores.'
 }
 
-const randomChunk = () => {
-  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
-    const bytes = new Uint32Array(1)
-    crypto.getRandomValues(bytes)
-    return bytes[0].toString(36).toUpperCase()
-  }
-
-  return Math.random().toString(36).slice(2, 10).toUpperCase()
-}
-
+// Para el inventario de colaboradores usamos códigos numéricos.
+// Generamos un número aleatorio de 7 dígitos como string.
 const buildBarcodeCandidate = () => {
-  return `IC-${Date.now().toString(36).toUpperCase()}-${randomChunk()}`
+  return Math.floor(1000000 + Math.random() * 9000000).toString()
 }
 
 const isBarcodeAvailable = async (barcode, excludeId = '') => {
@@ -246,6 +239,19 @@ export function useInventarioColaboradores() {
     }
   }
 
+  const deleteInventarioColaborador = async (id) => {
+    loading.value = true
+    error.value = null
+    try {
+      await deleteDoc(doc(db, COLLECTION_NAME, String(id)))
+    } catch (err) {
+      error.value = mapError(err)
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
   const upsertInventarioDesdeExcel = async (rows = []) => {
     loading.value = true
     error.value = null
@@ -313,5 +319,7 @@ export function useInventarioColaboradores() {
     createInventarioColaborador,
     updateInventarioColaborador,
     upsertInventarioDesdeExcel
+    ,
+    deleteInventarioColaborador
   }
 }

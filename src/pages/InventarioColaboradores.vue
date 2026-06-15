@@ -200,9 +200,20 @@
             <p v-if="isGeneratingBarcode" class="field-hint">Generando codigo unico...</p>
             <p v-else class="field-hint">El codigo se genera automaticamente y queda guardado.</p>
 
-            <div class="barcode-preview">
-              <svg ref="barcodeSvgRef"></svg>
-            </div>
+            <!-- Imagen del código ocultada en modal; solo se muestra el número en el campo -->
+            <ion-button
+              v-if="isEditing"
+              expand="block"
+              fill="outline"
+              class="print-barcode-button"
+              :disabled="isPrinting"
+              color="primary"
+              @click="shareLabelToTinyPrint"
+            >
+              <ion-icon slot="start" :icon="print"></ion-icon>
+              {{ isPrinting ? 'GENERANDO ETIQUETA...' : 'IMPRIMIR EN TINYPRINT' }}
+            </ion-button>
+            <p v-if="printError" class="field-error">{{ printError }}</p>
           </div>
 
           <div class="form-card">
@@ -247,6 +258,9 @@
           </div>
 
           <div v-if="formError" class="error-message">{{ formError }}</div>
+          <div v-if="isEditing" class="modal-actions">
+            <ion-button color="danger" expand="block" @click="confirmDelete">Eliminar herramienta</ion-button>
+          </div>
         </div>
       </ion-content>
       <ion-footer class="modal-footer">
@@ -266,6 +280,8 @@
       position="top"
       @did-dismiss="showToast = false"
     ></ion-toast>
+
+    <ion-alert :is-open="showDeleteConfirm" header="Confirmar Eliminación" message="¿Estás seguro de que deseas eliminar este registro?" :buttons="deleteConfirmButtons"></ion-alert>
   </ion-page>
 </template>
 
@@ -313,9 +329,10 @@ import {
   IonSelect,
   IonSelectOption,
   IonToast,
+  IonAlert,
   onIonViewWillLeave
 } from '@ionic/vue'
-import { add, apps, home, cube, people, swapHorizontal, clipboardOutline, refresh, closeOutline } from 'ionicons/icons'
+import { add, apps, home, cube, people, swapHorizontal, clipboardOutline, refresh, closeOutline, print } from 'ionicons/icons'
 
 const router = useRouter()
 const { colaboradores, getColaboradores } = useColaboradores()
@@ -328,6 +345,8 @@ const {
   createInventarioColaborador,
   updateInventarioColaborador,
   upsertInventarioDesdeExcel
+  ,
+  deleteInventarioColaborador
 } = useInventarioColaboradores()
 
 const searchText = ref('')
@@ -344,6 +363,7 @@ const barcodeSvgRef = ref(null)
 const showToast = ref(false)
 const toastMessage = ref('')
 const toastColor = ref('success')
+const showDeleteConfirm = ref(false)
 
 const formData = ref({
   colaboradorId: '',
@@ -422,15 +442,147 @@ const filteredInventario = computed(() => {
   })
 })
 
-const totalCount = computed(() => inventarioColaboradores.value.length)
-const completeCount = computed(() => inventarioColaboradores.value.filter((item) => item.estado === 'completo').length)
-const incompleteCount = computed(() => inventarioColaboradores.value.filter((item) => item.estado === 'incompleto').length)
-const missingCount = computed(() => inventarioColaboradores.value.filter((item) => item.estado === 'faltante').length)
+const inventarioPorColaborador = computed(() => {
+  const collaboratorId = String(colaboradorFilter.value || '').trim()
+  if (!collaboratorId) return inventarioColaboradores.value
+  return inventarioColaboradores.value.filter((item) => String(item.colaboradorId || '').trim() === collaboratorId)
+})
+
+const totalCount = computed(() => inventarioPorColaborador.value.length)
+const completeCount = computed(() => inventarioPorColaborador.value.filter((item) => String(item.estado || '').toLowerCase() === 'completo').length)
+const incompleteCount = computed(() => inventarioPorColaborador.value.filter((item) => String(item.estado || '').toLowerCase() === 'incompleto').length)
+const missingCount = computed(() => inventarioPorColaborador.value.filter((item) => String(item.estado || '').toLowerCase() === 'faltante').length)
 
 const showFeedback = async (message, color = 'success') => {
   toastMessage.value = message
   toastColor.value = color
   showToast.value = true
+}
+
+const isPrinting = ref(false)
+const printError = ref('')
+
+const LABEL_WIDTH_PX = 320
+const LABEL_HEIGHT_PX = 160
+const LABEL_RENDER_SCALE = 3
+
+const buildLabelDataUrl = (code) => {
+  const canvas = document.createElement('canvas')
+  canvas.width = LABEL_WIDTH_PX * LABEL_RENDER_SCALE
+  canvas.height = LABEL_HEIGHT_PX * LABEL_RENDER_SCALE
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('No se pudo crear el lienzo de impresion.')
+
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  const barcodeCanvas = document.createElement('canvas')
+  barcodeCanvas.width = LABEL_WIDTH_PX * LABEL_RENDER_SCALE
+  barcodeCanvas.height = 104 * LABEL_RENDER_SCALE
+  const barcodeCtx = barcodeCanvas.getContext('2d')
+  if (!barcodeCtx) throw new Error('No se pudo crear el lienzo del codigo de barras.')
+
+  barcodeCtx.fillStyle = '#ffffff'
+  barcodeCtx.fillRect(0, 0, barcodeCanvas.width, barcodeCanvas.height)
+
+  JsBarcode(barcodeCanvas, code, {
+    format: 'CODE128',
+    displayValue: false,
+    marginLeft: 34,
+    marginRight: 34,
+    marginTop: 8,
+    marginBottom: 8,
+    height: 86 * LABEL_RENDER_SCALE,
+    width: 2.4,
+    lineColor: '#000000',
+    background: '#ffffff'
+  })
+
+  ctx.imageSmoothingEnabled = false
+  ctx.drawImage(
+    barcodeCanvas,
+    0,
+    0,
+    barcodeCanvas.width,
+    barcodeCanvas.height,
+    0,
+    8 * LABEL_RENDER_SCALE,
+    canvas.width,
+    104 * LABEL_RENDER_SCALE
+  )
+
+  ctx.fillStyle = '#000000'
+  ctx.font = '24px monospace'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'bottom'
+  ctx.fillText(code, canvas.width / 2, canvas.height - 6)
+
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  const data = imageData.data
+  for (let i = 0; i < data.length; i += 4) {
+    const luminance = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
+    const value = luminance < 210 ? 0 : 255
+    data[i] = value
+    data[i + 1] = value
+    data[i + 2] = value
+    data[i + 3] = 255
+  }
+  ctx.putImageData(imageData, 0, 0)
+
+  return canvas.toDataURL('image/png')
+}
+
+const buildLabelFileUri = async (code) => {
+  const dataUrl = buildLabelDataUrl(code)
+  const base64Data = dataUrl.split(',')[1]
+  if (!base64Data) throw new Error('No se pudo generar la imagen de impresión.')
+
+  const fileName = `tinyprint-${code}.png`
+  const result = await Filesystem.writeFile({
+    path: fileName,
+    data: base64Data,
+    directory: Directory.Cache,
+    recursive: true
+  })
+
+  return result.uri
+}
+
+const shareLabelToTinyPrint = async () => {
+  printError.value = ''
+  if (!isEditing.value) return
+
+  const barcode = (formData.value.barcode || '').trim()
+  if (!barcode) {
+    printError.value = 'El registro no tiene codigo de barras.'
+    return
+  }
+
+  if (!Capacitor?.isNativePlatform?.()) {
+    printError.value = 'La impresion solo funciona en la app instalada.'
+    return
+  }
+
+  try {
+    isPrinting.value = true
+    const fileUri = await buildLabelFileUri(barcode)
+    await Share.share({
+      title: 'Etiqueta de inventario',
+      text: barcode,
+      files: [fileUri],
+      dialogTitle: 'Compartir etiqueta con TinyPrint'
+    })
+
+    await showFeedback(`Etiqueta enviada - ${barcode}`, 'success')
+  } catch (err) {
+    const errorMsg = err?.message || 'No se pudo generar la etiqueta.'
+    if (!errorMsg.includes('cancel') && !errorMsg.includes('dismiss')) {
+      printError.value = errorMsg
+      await showFeedback(errorMsg, 'danger')
+    }
+  } finally {
+    isPrinting.value = false
+  }
 }
 
 const getEstadoClass = (estado) => {
@@ -487,6 +639,14 @@ const openCreateModal = async () => {
   isEditing.value = false
   currentItemId.value = ''
   resetForm()
+  // Si hay un colaborador seleccionado en el filtro, pre-seleccionarlo en el formulario
+  const selected = String(colaboradorFilter.value || '').trim()
+  if (selected) {
+    const exists = colaboradores.value.find((c) => String(c.id || '') === selected)
+    if (exists) {
+      formData.value.colaboradorId = selected
+    }
+  }
   isModalOpen.value = true
   await regenerateBarcode()
 }
@@ -598,6 +758,28 @@ const saveInventario = async () => {
     formError.value = composableError.value || err?.message || 'No se pudo guardar el registro.'
   }
 }
+
+const confirmDelete = () => {
+  showDeleteConfirm.value = true
+}
+
+const deleteConfirmButtons = [
+  { text: 'Cancelar', role: 'cancel' },
+  {
+    text: 'Eliminar',
+    role: 'destructive',
+    handler: async () => {
+      try {
+        await deleteInventarioColaborador(currentItemId.value)
+        await refreshData()
+        closeModal()
+        await showFeedback('Registro eliminado', 'success')
+      } catch (err) {
+        await showFeedback(err?.message || 'No se pudo eliminar el registro', 'danger')
+      }
+    }
+  }
+]
 
 const triggerImportFile = () => {
   fileInputRef.value?.click()

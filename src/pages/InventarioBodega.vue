@@ -99,6 +99,19 @@
                 <ion-label position="stacked">Barcode</ion-label>
                 <ion-input v-model="formData.barcode" readonly :legacy="true"></ion-input>
             </ion-item>
+            <ion-button
+              v-if="isEditing"
+              expand="block"
+              fill="outline"
+              class="print-barcode-button"
+              :disabled="isPrinting"
+              color="primary"
+              @click="shareLabelToTinyPrint"
+            >
+              <ion-icon slot="start" :icon="print"></ion-icon>
+              {{ isPrinting ? 'Generando etiqueta...' : 'Imprimir etiqueta' }}
+            </ion-button>
+            <p v-if="printError" class="field-error">{{ printError }}</p>
             <ion-item>
               <ion-label position="stacked">Descripcion</ion-label>
               <ion-input v-model="formData.descripcion" :legacy="true"></ion-input>
@@ -123,6 +136,9 @@
               <ion-label position="stacked">Proveedor</ion-label>
               <ion-input v-model="formData.proveedor" :legacy="true"></ion-input>
             </ion-item>
+            <div v-if="isEditing" class="modal-actions">
+              <ion-button color="danger" expand="block" @click="confirmDelete">Eliminar item</ion-button>
+            </div>
           </div>
         </ion-content>
         <ion-footer>
@@ -162,13 +178,14 @@
         </ion-footer>
       </ion-modal>
 
+      <ion-alert :is-open="showDeleteConfirm" header="Confirmar Eliminación" message="¿Estás seguro de que deseas eliminar este item?" :buttons="deleteConfirmButtons"></ion-alert>
       <ion-toast :is-open="showToast" :message="toastMessage" :color="toastColor" duration="2200" position="top" @did-dismiss="showToast=false"></ion-toast>
     </ion-content>
   </ion-page>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import {
   IonPage,
   IonHeader,
@@ -191,15 +208,20 @@ import {
   IonFooter,
   IonToast,
   IonInput,
-  IonSpinner
+  IonSpinner,
+  IonAlert
 } from '@ionic/vue'
 import { useRouter } from 'vue-router'
 import { useInventarioBodega } from '../composables/useInventarioBodega'
 import { useAuth } from '../composables/useAuth'
 import { useMovimientosBodega } from '../composables/useMovimientosBodega'
-import { home, cube, people, swapHorizontal, apps, clipboardOutline } from 'ionicons/icons'
+import { home, cube, people, swapHorizontal, apps, clipboardOutline, print } from 'ionicons/icons'
+import JsBarcode from 'jsbarcode'
+import { Capacitor } from '@capacitor/core'
+import { Directory, Filesystem } from '@capacitor/filesystem'
+import { Share } from '@capacitor/share'
 
-const { inventarioBodega, loading, getInventario, createInventarioItem, updateInventarioItem, getNextBarcode } = useInventarioBodega()
+const { inventarioBodega, loading, getInventario, createInventarioItem, updateInventarioItem, getNextBarcode, deleteInventarioItem } = useInventarioBodega()
 const { createMovimiento } = useMovimientosBodega()
 
 const inventario = inventarioBodega
@@ -225,12 +247,139 @@ const movimientoSaving = ref(false)
 const showToast = ref(false)
 const toastMessage = ref('')
 const toastColor = ref('success')
+const showDeleteConfirm = ref(false)
 
 const generateBarcode = async () => {
   try {
     formData.value.barcode = await getNextBarcode()
   } catch (err) {
     showFeedback('No se pudo generar barcode', 'danger')
+  }
+}
+
+const isPrinting = ref(false)
+const printError = ref('')
+
+const LABEL_WIDTH_PX = 320
+const LABEL_HEIGHT_PX = 160
+const LABEL_RENDER_SCALE = 3
+
+const buildLabelDataUrl = (code) => {
+  const canvas = document.createElement('canvas')
+  canvas.width = LABEL_WIDTH_PX * LABEL_RENDER_SCALE
+  canvas.height = LABEL_HEIGHT_PX * LABEL_RENDER_SCALE
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('No se pudo crear el lienzo de impresion.')
+
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  const barcodeCanvas = document.createElement('canvas')
+  barcodeCanvas.width = LABEL_WIDTH_PX * LABEL_RENDER_SCALE
+  barcodeCanvas.height = 104 * LABEL_RENDER_SCALE
+  const barcodeCtx = barcodeCanvas.getContext('2d')
+  if (!barcodeCtx) throw new Error('No se pudo crear el lienzo del codigo de barras.')
+
+  barcodeCtx.fillStyle = '#ffffff'
+  barcodeCtx.fillRect(0, 0, barcodeCanvas.width, barcodeCanvas.height)
+
+  JsBarcode(barcodeCanvas, code, {
+    format: 'CODE128',
+    displayValue: false,
+    marginLeft: 34,
+    marginRight: 34,
+    marginTop: 8,
+    marginBottom: 8,
+    height: 86 * LABEL_RENDER_SCALE,
+    width: 2.4,
+    lineColor: '#000000',
+    background: '#ffffff'
+  })
+
+  ctx.imageSmoothingEnabled = false
+  ctx.drawImage(
+    barcodeCanvas,
+    0,
+    0,
+    barcodeCanvas.width,
+    barcodeCanvas.height,
+    0,
+    8 * LABEL_RENDER_SCALE,
+    canvas.width,
+    104 * LABEL_RENDER_SCALE
+  )
+
+  ctx.fillStyle = '#000000'
+  ctx.font = '24px monospace'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'bottom'
+  ctx.fillText(code, canvas.width / 2, canvas.height - 6)
+
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  const data = imageData.data
+  for (let i = 0; i < data.length; i += 4) {
+    const luminance = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
+    const value = luminance < 210 ? 0 : 255
+    data[i] = value
+    data[i + 1] = value
+    data[i + 2] = value
+    data[i + 3] = 255
+  }
+  ctx.putImageData(imageData, 0, 0)
+
+  return canvas.toDataURL('image/png')
+}
+
+const buildLabelFileUri = async (code) => {
+  const dataUrl = buildLabelDataUrl(code)
+  const base64Data = dataUrl.split(',')[1]
+  if (!base64Data) throw new Error('No se pudo generar la imagen de impresión.')
+
+  const fileName = `tinyprint-${code}.png`
+  const result = await Filesystem.writeFile({
+    path: fileName,
+    data: base64Data,
+    directory: Directory.Cache,
+    recursive: true
+  })
+
+  return result.uri
+}
+
+const shareLabelToTinyPrint = async () => {
+  printError.value = ''
+  if (!isEditing.value) return
+
+  const barcode = (formData.value.barcode || '').trim()
+  if (!barcode) {
+    printError.value = 'El registro no tiene codigo de barras.'
+    return
+  }
+
+  if (!Capacitor?.isNativePlatform?.()) {
+    printError.value = 'La impresion solo funciona en la app instalada.'
+    return
+  }
+
+  try {
+    isPrinting.value = true
+    const fileUri = await buildLabelFileUri(barcode)
+    await Share.share({
+      title: 'Etiqueta de inventario',
+      text: barcode,
+      files: [fileUri],
+      dialogTitle: 'Compartir etiqueta con TinyPrint'
+    })
+
+    showFeedback(`Etiqueta enviada - ${barcode}`, 'success')
+  } catch (err) {
+    const errorMsg = err?.message || 'No se pudo generar la etiqueta.'
+    if (!errorMsg.includes('cancel') && !errorMsg.includes('dismiss')) {
+      printError.value = errorMsg
+      showFeedback(errorMsg, 'danger')
+    }
+  } finally {
+    isPrinting.value = false
   }
 }
 
@@ -246,6 +395,28 @@ const openEditModal = async (item) => {
   formData.value = { ...item }
   isModalOpen.value = true
 }
+
+const confirmDelete = () => {
+  showDeleteConfirm.value = true
+}
+
+const deleteConfirmButtons = [
+  { text: 'Cancelar', role: 'cancel' },
+  {
+    text: 'Eliminar',
+    role: 'destructive',
+    handler: async () => {
+      try {
+        await deleteInventarioItem(formData.value.barcode)
+        showFeedback('Item eliminado', 'success')
+        await refresh()
+        closeModal()
+      } catch (err) {
+        showFeedback(err?.message || 'No se pudo eliminar el item', 'danger')
+      }
+    }
+  }
+]
 
 const closeModal = () => { isModalOpen.value = false }
 
