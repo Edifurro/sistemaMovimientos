@@ -104,6 +104,10 @@
             <ion-button expand="block" @click="openCreateModal">Nueva herramienta</ion-button>
             <ion-button expand="block" fill="outline" @click="triggerImportFile">Importar Excel</ion-button>
             <ion-button expand="block" fill="outline" @click="exportToExcel">Exportar Excel</ion-button>
+            <ion-button expand="block" fill="outline" @click="openBarcodeScanner">
+              <ion-icon slot="start" :icon="camera"></ion-icon>
+              Escanear
+            </ion-button>
           </div>
         </div>
 
@@ -272,6 +276,61 @@
       </ion-footer>
     </ion-modal>
 
+    <ion-modal :is-open="showImportOptionsModal" @didDismiss="showImportOptionsModal = false">
+      <ion-header>
+        <ion-toolbar color="primary">
+          <ion-title>Opciones de importación</ion-title>
+        </ion-toolbar>
+      </ion-header>
+      <ion-content>
+        <div class="modal-form">
+          <p>Filas detectadas: <strong>{{ importRowsCount }}</strong></p>
+          <p>Codigos únicos: <strong>{{ importUniqueBarcodesCount }}</strong></p>
+
+          <ion-item>
+            <ion-label position="stacked">Asignar a colaborador (opcional)</ion-label>
+            <ion-select v-model="importAssignCollaborator" placeholder="No asignar">
+              <ion-select-option value="">No asignar</ion-select-option>
+              <ion-select-option v-for="c in collaboratorFilterOptions" :key="c.id" :value="c.id">{{ c.nombre }}</ion-select-option>
+            </ion-select>
+          </ion-item>
+
+          <ion-item>
+            <ion-label>Forzar asignación a todos</ion-label>
+            <ion-toggle slot="end" v-model="importForceAssign"></ion-toggle>
+          </ion-item>
+
+          <div v-if="importRowsPreview.length" style="margin-top:0.75rem">
+            <h3>Preview (primeras {{ importRowsPreview.length }})</h3>
+            <ion-list>
+              <ion-item v-for="(r, idx) in importRowsPreview" :key="idx">
+                <ion-label>
+                  <h3>{{ r.herramienta || '—' }}</h3>
+                  <p>Barcode: {{ r.barcode || '—' }}</p>
+                  <p>Colaborador: {{ r.colaboradorNombre || '—' }}</p>
+                </ion-label>
+              </ion-item>
+            </ion-list>
+          </div>
+          <div v-if="importInProgress" style="margin-top:0.75rem">
+            <p>Importando: <strong>{{ importProcessed }}</strong> / <strong>{{ importRowsCount }}</strong> (<strong>{{ Math.round(importProgress * 100) }}%</strong>)</p>
+            <ion-progress-bar :value="importProgress"></ion-progress-bar>
+            <p style="margin-top:0.5rem">Creados: {{ importCreated }} · Actualizados: {{ importUpdated }} · Omitidos: {{ importSkipped }}</p>
+          </div>
+        </div>
+      </ion-content>
+      <ion-footer>
+        <ion-toolbar>
+          <ion-buttons slot="start">
+            <ion-button color="medium" @click="cancelImport" :disabled="importInProgress">Cancelar</ion-button>
+          </ion-buttons>
+          <ion-buttons slot="end">
+            <ion-button color="primary" @click="confirmImport" :disabled="!importRowsCount || importInProgress">{{ importInProgress ? 'Importando...' : 'Importar' }}</ion-button>
+          </ion-buttons>
+        </ion-toolbar>
+      </ion-footer>
+    </ion-modal>
+
     <ion-toast
       :is-open="showToast"
       :message="toastMessage"
@@ -282,6 +341,7 @@
     ></ion-toast>
 
     <ion-alert :is-open="showDeleteConfirm" header="Confirmar Eliminación" message="¿Estás seguro de que deseas eliminar este registro?" :buttons="deleteConfirmButtons"></ion-alert>
+    <ion-alert :is-open="showImportResultAlert" header="Resultado de importación" :message="`Nuevos: ${importResult.created}, Actualizados: ${importResult.updated}, Omitidos: ${importResult.skipped}`" :buttons="importResultButtons"></ion-alert>
   </ion-page>
 </template>
 
@@ -292,6 +352,7 @@ import { Capacitor } from '@capacitor/core'
 import { Directory, Filesystem } from '@capacitor/filesystem'
 import { Share } from '@capacitor/share'
 import JsBarcode from 'jsbarcode'
+import { BarcodeFormat, BarcodeScanner } from '@capacitor-mlkit/barcode-scanning'
 import { useColaboradores } from '../composables/useColaboradores'
 import { useInventarioColaboradores } from '../composables/useInventarioColaboradores'
 import {
@@ -328,11 +389,13 @@ import {
   IonSpinner,
   IonSelect,
   IonSelectOption,
+  IonToggle,
+  IonProgressBar,
   IonToast,
   IonAlert,
   onIonViewWillLeave
 } from '@ionic/vue'
-import { add, apps, home, cube, people, swapHorizontal, clipboardOutline, refresh, closeOutline, print } from 'ionicons/icons'
+import { add, apps, home, cube, people, swapHorizontal, clipboardOutline, refresh, closeOutline, print, camera } from 'ionicons/icons'
 
 const router = useRouter()
 const { colaboradores, getColaboradores } = useColaboradores()
@@ -342,6 +405,7 @@ const {
   error: composableError,
   getNextBarcode,
   getInventarioColaboradores,
+  getInventarioColaboradorById,
   createInventarioColaborador,
   updateInventarioColaborador,
   upsertInventarioDesdeExcel
@@ -364,6 +428,52 @@ const showToast = ref(false)
 const toastMessage = ref('')
 const toastColor = ref('success')
 const showDeleteConfirm = ref(false)
+
+const showImportResultAlert = ref(false)
+const importResult = ref({ created: 0, updated: 0, skipped: 0 })
+const importResultButtons = [
+  {
+    text: 'OK',
+    role: 'cancel',
+    handler: () => {
+      showImportResultAlert.value = false
+    }
+  }
+]
+
+// Import options state
+const showImportOptionsModal = ref(false)
+const importRows = ref([])
+const importAssignCollaborator = ref('')
+const importForceAssign = ref(false)
+
+const importRowsCount = computed(() => importRows.value.length)
+const importUniqueBarcodesCount = computed(() => {
+  const set = new Set(importRows.value.map((r) => String(r?.barcode || '').trim()).filter(Boolean))
+  return set.size
+})
+const importRowsPreview = computed(() => importRows.value.slice(0, 5))
+
+// Import progress state
+const importInProgress = ref(false)
+const importProcessed = ref(0)
+const importCreated = ref(0)
+const importUpdated = ref(0)
+const importSkipped = ref(0)
+const importProgress = computed(() => {
+  const total = importRowsCount.value || 0
+  return total ? Math.min(importProcessed.value / total, 1) : 0
+})
+
+// Scanner state
+const isScanning = ref(false)
+const isModalScannerBusy = ref(false)
+const scannerError = ref('')
+
+const SCANNER_TIMEOUT_MS = 15000
+const DEBOUNCE_DELAY_MS = 800
+const MODULE_INSTALL_TIMEOUT_MS = 20000
+const MODULE_INSTALL_POLL_MS = 1000
 
 const formData = ref({
   colaboradorId: '',
@@ -601,6 +711,113 @@ const navigateTo = async (path) => {
   await router.push(path)
 }
 
+const openBarcodeScanner = async () => {
+  scannerError.value = ''
+  if (isScanning.value || isModalScannerBusy.value) return
+
+  if (!Capacitor?.isNativePlatform?.()) {
+    scannerError.value = 'El escaneo solo funciona en la app instalada.'
+    await showFeedback(scannerError.value, 'warning')
+    return
+  }
+
+  isModalScannerBusy.value = true
+  try {
+    const { supported } = await BarcodeScanner.isSupported()
+    if (!supported) {
+      scannerError.value = 'Este dispositivo no soporta escaneo de códigos.'
+      await showFeedback(scannerError.value, 'warning')
+      return
+    }
+
+    const permissions = await BarcodeScanner.requestPermissions()
+    if (permissions.camera !== 'granted') {
+      scannerError.value = 'Necesitas permitir acceso a la cámara.'
+      await showFeedback(scannerError.value, 'warning')
+      return
+    }
+
+    if (Capacitor.getPlatform() === 'android') {
+      const moduleStatus = await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable()
+      if (!moduleStatus.available) {
+        scannerError.value = 'Instalando módulo de escaneo...'
+        await showFeedback(scannerError.value, 'warning')
+        await BarcodeScanner.installGoogleBarcodeScannerModule()
+
+        const started = Date.now()
+        while (Date.now() - started < MODULE_INSTALL_TIMEOUT_MS) {
+          const status = await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable()
+          if (status.available) {
+            scannerError.value = ''
+            break
+          }
+          await new Promise((r) => setTimeout(r, MODULE_INSTALL_POLL_MS))
+        }
+      }
+    }
+
+    isScanning.value = true
+    let scanTimeout = false
+    let scannerTimeoutId = setTimeout(() => {
+      scanTimeout = true
+      BarcodeScanner.stopScan().catch(() => {})
+      scannerError.value = 'Tiempo de escaneo agotado (15s).'
+      isScanning.value = false
+    }, SCANNER_TIMEOUT_MS)
+
+    const result = await BarcodeScanner.scan({
+      formats: [
+        BarcodeFormat.Code128,
+        BarcodeFormat.Code39,
+        BarcodeFormat.Ean13,
+        BarcodeFormat.Ean8,
+        BarcodeFormat.UpcA,
+        BarcodeFormat.UpcE,
+        BarcodeFormat.Itf
+      ]
+    })
+
+    if (scannerTimeoutId) {
+      clearTimeout(scannerTimeoutId)
+      scannerTimeoutId = null
+    }
+
+    if (scanTimeout) return
+
+    const first = result?.barcodes?.[0]
+    const scannedCode = (first?.rawValue || first?.displayValue || '').trim()
+    if (!scannedCode) {
+      scannerError.value = 'No se detectó ningún código.'
+      await showFeedback(scannerError.value, 'warning')
+      return
+    }
+
+    // Buscar el item por barcode
+    try {
+      const found = await getInventarioColaboradorById(scannedCode)
+      if (found) {
+        openEditModal(found)
+        await showFeedback(`Item encontrado: ${found.herramienta} · ${found.colaboradorNombre || 'Sin colaborador'}`, 'success')
+      } else {
+        await showFeedback(`No se encontró un item con el código ${scannedCode}.`, 'warning')
+      }
+    } catch (err) {
+      await showFeedback(err?.message || 'Error buscando el código escaneado.', 'danger')
+    }
+
+  } catch (err) {
+    const msg = err?.message || ''
+    if (!msg.includes('cancel') && !msg.includes('dismiss') && !msg.includes('timeout')) {
+      scannerError.value = err?.message || 'No se pudo iniciar el escáner.'
+      await showFeedback(scannerError.value, 'danger')
+    }
+  } finally {
+    isScanning.value = false
+    isModalScannerBusy.value = false
+    await new Promise((r) => setTimeout(r, DEBOUNCE_DELAY_MS))
+  }
+}
+
 const renderBarcode = async () => {
   await nextTick()
   const target = barcodeSvgRef.value
@@ -701,6 +918,34 @@ const getEstadoBadgeClass = (estado) => {
 
 const formatDate = (value) => {
   if (!value) return 'Sin fecha'
+
+  // Firestore Timestamp
+  if (value && typeof value.toDate === 'function') {
+    try {
+      return value.toDate().toLocaleDateString('es-MX')
+    } catch (e) {}
+  }
+
+  // Date object
+  if (value instanceof Date) {
+    return value.toLocaleDateString('es-MX')
+  }
+
+  // Numeric timestamp
+  if (typeof value === 'number' || (/^\d+$/.test(String(value).trim()) && String(value).length >= 10)) {
+    const dateNum = new Date(Number(value))
+    if (!Number.isNaN(dateNum.getTime())) return dateNum.toLocaleDateString('es-MX')
+  }
+
+  // ISO date-only string YYYY-MM-DD -> construct local date (avoid timezone shift)
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const parts = value.split('-').map((p) => Number(p))
+    if (parts.length === 3) {
+      const d = new Date(parts[0], parts[1] - 1, parts[2])
+      if (!Number.isNaN(d.getTime())) return d.toLocaleDateString('es-MX')
+    }
+  }
+
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return String(value)
   return date.toLocaleDateString('es-MX')
@@ -801,11 +1046,68 @@ const handleImportFile = async (event) => {
       return
     }
 
-    const result = await upsertInventarioDesdeExcel(rows)
+    // Guardamos las filas y abrimos el modal de opciones para confirmar la importación
+    importRows.value = rows
+    importAssignCollaborator.value = String(colaboradorFilter.value || '').trim() || ''
+    importForceAssign.value = false
+    showImportOptionsModal.value = true
+  } catch (err) {
+    await showFeedback(err?.message || 'No se pudo importar el archivo.', 'danger')
+  }
+}
+
+const cancelImport = () => {
+  showImportOptionsModal.value = false
+  importRows.value = []
+  importAssignCollaborator.value = ''
+  importForceAssign.value = false
+}
+
+const confirmImport = async () => {
+  if (!importRows.value.length) return
+  importInProgress.value = true
+  importProcessed.value = 0
+  importCreated.value = 0
+  importUpdated.value = 0
+  importSkipped.value = 0
+
+  try {
+    let rowsToImport = [...importRows.value]
+    if (importAssignCollaborator.value) {
+      const selected = colaboradores.value.find((c) => String(c.id || '') === String(importAssignCollaborator.value))
+      const colaboradorNombre = selected?.nombre || ''
+      const codigoEmpleado = selected?.codigoEmpleado || ''
+      rowsToImport = rowsToImport.map((r) => {
+        const copy = { ...r }
+        if (importForceAssign.value || !copy.colaboradorId) {
+          copy.colaboradorId = String(importAssignCollaborator.value)
+          copy.colaboradorNombre = colaboradorNombre
+          copy.codigoEmpleado = codigoEmpleado
+        }
+        return copy
+      })
+    }
+
+    const progressCb = ({ index, total, created, updated, skipped }) => {
+      importProcessed.value = Math.min((index || 0) + 1, total || importRowsCount.value)
+      importCreated.value = created || 0
+      importUpdated.value = updated || 0
+      importSkipped.value = skipped || 0
+    }
+
+    const result = await upsertInventarioDesdeExcel(rowsToImport, progressCb)
     await refreshData()
+    showImportOptionsModal.value = false
+    importRows.value = []
+    importAssignCollaborator.value = ''
+    importForceAssign.value = false
+    importResult.value = result
+    showImportResultAlert.value = true
     await showFeedback(`Importacion lista. Nuevos: ${result.created}, actualizados: ${result.updated}, omitidos: ${result.skipped}.`, 'success')
   } catch (err) {
     await showFeedback(err?.message || 'No se pudo importar el archivo.', 'danger')
+  } finally {
+    importInProgress.value = false
   }
 }
 

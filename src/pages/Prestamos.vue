@@ -962,7 +962,24 @@ const getPrestamoResumen = (prestamo) => {
 
 const formatDate = (value) => {
   if (!value) return 'Sin fecha'
-  return new Date(value).toLocaleString('es-MX')
+
+  if (value && typeof value.toDate === 'function') {
+    try { return value.toDate().toLocaleString('es-MX') } catch (e) {}
+  }
+
+  if (value instanceof Date) {
+    return value.toLocaleString('es-MX')
+  }
+
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [y,m,d] = value.split('-').map(Number)
+    const date = new Date(y, m-1, d)
+    return date.toLocaleString('es-MX')
+  }
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value)
+  return date.toLocaleString('es-MX')
 }
 
 const isPrestamoVencido = (prestamo) => {

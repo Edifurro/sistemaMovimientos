@@ -252,7 +252,7 @@ export function useInventarioColaboradores() {
     }
   }
 
-  const upsertInventarioDesdeExcel = async (rows = []) => {
+  const upsertInventarioDesdeExcel = async (rows = [], progressCb = null) => {
     loading.value = true
     error.value = null
     try {
@@ -261,13 +261,17 @@ export function useInventarioColaboradores() {
       let skipped = 0
       const seenBarcodes = new Set()
 
-      for (const row of rows) {
+      for (let i = 0; i < rows.length; i += 1) {
+        const row = rows[i]
         const herramienta = String(row?.herramienta || '').trim()
         const colaboradorNombre = String(row?.colaboradorNombre || '').trim()
         let barcode = String(row?.barcode || '').trim()
 
         if (!barcode && !herramienta && !colaboradorNombre) {
           skipped += 1
+          if (typeof progressCb === 'function') {
+            try { progressCb({ index: i, total: rows.length, created, updated, skipped }) } catch (e) {}
+          }
           continue
         }
 
@@ -277,6 +281,9 @@ export function useInventarioColaboradores() {
 
         if (seenBarcodes.has(barcode)) {
           skipped += 1
+          if (typeof progressCb === 'function') {
+            try { progressCb({ index: i, total: rows.length, created, updated, skipped }) } catch (e) {}
+          }
           continue
         }
         seenBarcodes.add(barcode)
@@ -297,6 +304,10 @@ export function useInventarioColaboradores() {
           updated += 1
         } else {
           created += 1
+        }
+
+        if (typeof progressCb === 'function') {
+          try { progressCb({ index: i, total: rows.length, created, updated, skipped }) } catch (e) {}
         }
       }
 
