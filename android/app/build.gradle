@@ -44,6 +44,40 @@ dependencies {
 
 apply from: 'capacitor.build.gradle'
 
+// Task to copy custom app icon from assets into resource mipmap/drawable folders
+task copyCustomIcon {
+    doLast {
+        def src = file("${projectDir}/src/main/assets/logoTaller.jpeg")
+        if (!src.exists()) {
+            logger.warn("Custom icon not found at ${src}. Skipping icon copy.")
+            return
+        }
+
+        def densities = ['mipmap-mdpi','mipmap-hdpi','mipmap-xhdpi','mipmap-xxhdpi','mipmap-xxxhdpi','mipmap-anydpi-v26','drawable']
+        densities.each { d ->
+            def destDir = file("${projectDir}/src/main/res/${d}")
+            if (!destDir.exists()) destDir.mkdirs()
+
+            // Remove any existing ic_launcher_custom.* to avoid duplicate-resource errors
+            destDir.listFiles()?.each { f ->
+                if (f.name ==~ /ic_launcher_custom\.(png|jpg|jpeg|webp)/) {
+                    f.delete()
+                }
+            }
+
+            copy {
+                from src
+                into destDir
+                rename { String fileName -> "ic_launcher_custom.jpg" }
+            }
+        }
+
+        logger.lifecycle("Custom icon copied to res mipmap/drawable as ic_launcher_custom.jpg (old ic_launcher_custom.* removed)")
+    }
+}
+
+preBuild.dependsOn(copyCustomIcon)
+
 try {
     def servicesJSON = file('google-services.json')
     if (servicesJSON.text) {

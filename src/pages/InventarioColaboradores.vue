@@ -211,7 +211,7 @@
               fill="outline"
               class="print-barcode-button"
               :disabled="isPrinting"
-              color="primary"
+              color="primary" 
               @click="shareLabelToTinyPrint"
             >
               <ion-icon slot="start" :icon="print"></ion-icon>
@@ -609,6 +609,16 @@ const buildLabelDataUrl = (code) => {
   })
 
   ctx.imageSmoothingEnabled = false
+  // Añadir 1.5 cm extra de margen superior (previos 1.0cm + 0.5cm adicional)
+  // y 1.0 cm extra de margen derecho (previos 0.5cm + 0.5cm adicional) para ajustar la etiqueta física.
+  const extraTopMarginCm = 1.5
+  const extraRightMarginCm = 0.8
+  const pxPerCm = 96 / 2.54
+  const extraTopMarginPx = Math.round(extraTopMarginCm * pxPerCm * LABEL_RENDER_SCALE)
+  const extraRightMarginPx = Math.round(extraRightMarginCm * pxPerCm * LABEL_RENDER_SCALE)
+
+  const destWidth = Math.max(0, canvas.width - extraRightMarginPx)
+
   ctx.drawImage(
     barcodeCanvas,
     0,
@@ -616,16 +626,12 @@ const buildLabelDataUrl = (code) => {
     barcodeCanvas.width,
     barcodeCanvas.height,
     0,
-    8 * LABEL_RENDER_SCALE,
-    canvas.width,
+    8 * LABEL_RENDER_SCALE + extraTopMarginPx,
+    destWidth,
     104 * LABEL_RENDER_SCALE
   )
 
-  ctx.fillStyle = '#000000'
-  ctx.font = '24px monospace'
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'bottom'
-  ctx.fillText(code, canvas.width / 2, canvas.height - 6)
+  // No dibujar el texto del código debajo del barcode (sólo la imagen)
 
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
   const data = imageData.data

@@ -56,7 +56,16 @@
         <h2>Inventario de Bodega</h2>
       </div>
 
-      <ion-searchbar v-model="searchText" placeholder="Buscar" :debounce="200"></ion-searchbar>
+      <div class="controls">
+        <ion-searchbar v-model="searchText" placeholder="buscar por nombre o categoria" :debounce="200"></ion-searchbar>
+        <div class="action-row">
+          <ion-button expand="block" @click="openCreateModal">Nuevo</ion-button>
+          <ion-button expand="block" fill="outline" @click="openBarcodeScanner">
+            <ion-icon slot="start" :icon="camera"></ion-icon>
+            Escanear
+          </ion-button>
+        </div>
+      </div>
 
       <div v-if="loading && !inventario.length" class="loading-state">
         <ion-spinner name="circles"></ion-spinner>
@@ -70,6 +79,9 @@
               <h3>{{ item.descripcion }}</h3>
               <p>Barcode: {{ item.barcode }}</p>
               <p>{{ item.categoria || '—' }} • {{ item.ubicacion || '—' }}</p>
+              <p v-if="item.proveedor || (item.costoUnitario !== undefined && item.costoUnitario !== null)">
+                Proveedor: {{ item.proveedor || '—' }} • Precio: {{ (item.costoUnitario !== undefined && item.costoUnitario !== null) ? ('$' + Number(item.costoUnitario).toFixed(2)) : '—' }}
+              </p>
             </ion-label>
             <ion-badge slot="end">{{ item.cantidad }}</ion-badge>
           </ion-item>
@@ -90,7 +102,15 @@
         <ion-header>
           <ion-toolbar color="primary">
             <ion-title>{{ isEditing ? 'Editar item' : 'Nuevo item' }}</ion-title>
-            <ion-buttons slot="end"><ion-button v-if="!isEditing" @click="generateBarcode">Generar</ion-button></ion-buttons>
+            <ion-buttons slot="end">
+              <ion-button v-if="!isEditing" @click="generateBarcode">Generar</ion-button>
+            </ion-buttons>
+            <ion-buttons slot="end">
+              <ion-button class="close-modal-btn" @click="closeModal">
+                <ion-icon slot="start" :icon="closeOutline"></ion-icon>
+                Cerrar
+              </ion-button>
+            </ion-buttons>
           </ion-toolbar>
         </ion-header>
         <ion-content>
@@ -215,17 +235,28 @@ import { useRouter } from 'vue-router'
 import { useInventarioBodega } from '../composables/useInventarioBodega'
 import { useAuth } from '../composables/useAuth'
 import { useMovimientosBodega } from '../composables/useMovimientosBodega'
-import { home, cube, people, swapHorizontal, apps, clipboardOutline, print } from 'ionicons/icons'
+import { home, cube, people, swapHorizontal, apps, clipboardOutline, print, camera, closeOutline } from 'ionicons/icons'
+import { BarcodeScanner, BarcodeFormat } from '@capacitor-mlkit/barcode-scanning'
 import JsBarcode from 'jsbarcode'
 import { Capacitor } from '@capacitor/core'
 import { Directory, Filesystem } from '@capacitor/filesystem'
 import { Share } from '@capacitor/share'
 
-const { inventarioBodega, loading, getInventario, createInventarioItem, updateInventarioItem, getNextBarcode, deleteInventarioItem } = useInventarioBodega()
+const { inventarioBodega, loading, getInventario, getInventarioById, createInventarioItem, updateInventarioItem, getNextBarcode, deleteInventarioItem } = useInventarioBodega()
 const { createMovimiento } = useMovimientosBodega()
 
 const inventario = inventarioBodega
 const searchText = ref('')
+
+// Scanner state
+const isScanning = ref(false)
+const isModalScannerBusy = ref(false)
+const scannerError = ref('')
+
+const SCANNER_TIMEOUT_MS = 15000
+const DEBOUNCE_DELAY_MS = 800
+const MODULE_INSTALL_TIMEOUT_MS = 20000
+const MODULE_INSTALL_POLL_MS = 1000
 
 const router = useRouter()
 const isModulesMenuOpen = ref(false)
@@ -297,6 +328,16 @@ const buildLabelDataUrl = (code) => {
   })
 
   ctx.imageSmoothingEnabled = false
+  // Añadir 1.5 cm extra de margen superior (previos 1.0cm + 0.5cm adicional)
+  // y 1.0 cm extra de margen derecho (previos 0.5cm + 0.5cm adicional) para ajustar la etiqueta física.
+  const extraTopMarginCm = 1.5
+  const extraRightMarginCm = 0.8
+  const pxPerCm = 96 / 2.54
+  const extraTopMarginPx = Math.round(extraTopMarginCm * pxPerCm * LABEL_RENDER_SCALE)
+  const extraRightMarginPx = Math.round(extraRightMarginCm * pxPerCm * LABEL_RENDER_SCALE)
+
+  const destWidth = Math.max(0, canvas.width - extraRightMarginPx)
+
   ctx.drawImage(
     barcodeCanvas,
     0,
@@ -304,16 +345,12 @@ const buildLabelDataUrl = (code) => {
     barcodeCanvas.width,
     barcodeCanvas.height,
     0,
-    8 * LABEL_RENDER_SCALE,
-    canvas.width,
+    8 * LABEL_RENDER_SCALE + extraTopMarginPx,
+    destWidth,
     104 * LABEL_RENDER_SCALE
   )
 
-  ctx.fillStyle = '#000000'
-  ctx.font = '24px monospace'
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'bottom'
-  ctx.fillText(code, canvas.width / 2, canvas.height - 6)
+  // No dibujar el texto del código debajo del barcode (sólo la imagen)
 
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
   const data = imageData.data
@@ -431,7 +468,13 @@ const saveItem = async () => {
       await updateInventarioItem(formData.value.barcode, payload)
       showFeedback('Item actualizado', 'success')
     } else {
-      await createInventarioItem(payload)
+      const newId = await createInventarioItem(payload)
+      // Mostrar inmediatamente el nuevo item en la lista local antes de refrescar
+      try {
+        inventario.value = [{ id: newId, barcode: newId, ...payload }, ...inventario.value]
+      } catch (e) {
+        // ignore local update errors
+      }
       showFeedback('Item creado', 'success')
     }
     await refresh()
@@ -439,6 +482,112 @@ const saveItem = async () => {
   } catch (err) {
     showFeedback(err?.message || 'Error al guardar', 'danger')
   } finally { saving.value = false }
+}
+
+const openBarcodeScanner = async () => {
+  scannerError.value = ''
+  if (isScanning.value || isModalScannerBusy.value) return
+
+  if (!Capacitor?.isNativePlatform?.()) {
+    scannerError.value = 'El escaneo solo funciona en la app instalada.'
+    showFeedback(scannerError.value, 'warning')
+    return
+  }
+
+  isModalScannerBusy.value = true
+  try {
+    const { supported } = await BarcodeScanner.isSupported()
+    if (!supported) {
+      scannerError.value = 'Este dispositivo no soporta escaneo de códigos.'
+      showFeedback(scannerError.value, 'warning')
+      return
+    }
+
+    const permissions = await BarcodeScanner.requestPermissions()
+    if (permissions.camera !== 'granted') {
+      scannerError.value = 'Necesitas permitir acceso a la cámara.'
+      showFeedback(scannerError.value, 'warning')
+      return
+    }
+
+    if (Capacitor.getPlatform() === 'android') {
+      const moduleStatus = await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable()
+      if (!moduleStatus.available) {
+        scannerError.value = 'Instalando módulo de escaneo...'
+        showFeedback(scannerError.value, 'warning')
+        await BarcodeScanner.installGoogleBarcodeScannerModule()
+
+        const started = Date.now()
+        while (Date.now() - started < MODULE_INSTALL_TIMEOUT_MS) {
+          const status = await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable()
+          if (status.available) {
+            scannerError.value = ''
+            break
+          }
+          await new Promise((r) => setTimeout(r, MODULE_INSTALL_POLL_MS))
+        }
+      }
+    }
+
+    isScanning.value = true
+    let scanTimeout = false
+    let scannerTimeoutId = setTimeout(() => {
+      scanTimeout = true
+      BarcodeScanner.stopScan().catch(() => {})
+      scannerError.value = 'Tiempo de escaneo agotado (15s).'
+      isScanning.value = false
+    }, SCANNER_TIMEOUT_MS)
+
+    const result = await BarcodeScanner.scan({
+      formats: [
+        BarcodeFormat.Code128,
+        BarcodeFormat.Code39,
+        BarcodeFormat.Ean13,
+        BarcodeFormat.Ean8,
+        BarcodeFormat.UpcA,
+        BarcodeFormat.UpcE,
+        BarcodeFormat.Itf
+      ]
+    })
+
+    if (scannerTimeoutId) {
+      clearTimeout(scannerTimeoutId)
+      scannerTimeoutId = null
+    }
+
+    if (scanTimeout) return
+
+    const first = result?.barcodes?.[0]
+    const scannedCode = (first?.rawValue || first?.displayValue || '').trim()
+    if (!scannedCode) {
+      scannerError.value = 'No se detectó ningún código.'
+      showFeedback(scannerError.value, 'warning')
+      return
+    }
+
+    try {
+      const found = await getInventarioById(scannedCode)
+      if (found) {
+        openEditModal(found)
+        showFeedback(`Item encontrado: ${found.descripcion || found.barcode}`, 'success')
+      } else {
+        showFeedback(`No se encontró un item con el código ${scannedCode}.`, 'warning')
+      }
+    } catch (err) {
+      showFeedback(err?.message || 'Error buscando el código escaneado.', 'danger')
+    }
+
+  } catch (err) {
+    const msg = err?.message || ''
+    if (!msg.includes('cancel') && !msg.includes('dismiss') && !msg.includes('timeout')) {
+      scannerError.value = err?.message || 'No se pudo iniciar el escáner.'
+      showFeedback(scannerError.value, 'danger')
+    }
+  } finally {
+    isScanning.value = false
+    isModalScannerBusy.value = false
+    await new Promise((r) => setTimeout(r, DEBOUNCE_DELAY_MS))
+  }
 }
 
 const openMovimientoModal = (item, tipo) => {
@@ -504,7 +653,20 @@ onMounted(async () => {
 
 <style scoped>
 .page-container { padding: 1rem }
-.page-header h2 { margin: 0 0 0.5rem }
+.page-header { margin-bottom: 1rem }
+.page-header h2 { margin: 0 0 0.35rem }
+
+.controls {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.action-row {
+  display: grid;
+  gap: 0.5rem;
+}
+
 .loading-state { text-align: center; padding: 2rem }
 .empty-state { text-align: center; padding: 2rem }
 .modal-form { padding: 1rem }
