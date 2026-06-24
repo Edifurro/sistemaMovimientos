@@ -108,6 +108,10 @@
               <ion-icon slot="start" :icon="camera"></ion-icon>
               Escanear
             </ion-button>
+            <ion-button expand="block" fill="clear" color="tertiary" @click="startConteoForSelectedCollaborator" :disabled="!colaboradorFilter">
+              <ion-icon slot="start" :icon="people"></ion-icon>
+              Iniciar conteo
+            </ion-button>
           </div>
         </div>
 
@@ -354,6 +358,8 @@ import { Share } from '@capacitor/share'
 import JsBarcode from 'jsbarcode'
 import { BarcodeFormat, BarcodeScanner } from '@capacitor-mlkit/barcode-scanning'
 import { useColaboradores } from '../composables/useColaboradores'
+import { useConteoColaborador } from '../composables/useConteoColaborador'
+import { useAuth } from '../composables/useAuth'
 import { useInventarioColaboradores } from '../composables/useInventarioColaboradores'
 import {
   buildInventarioColaboradoresWorkbook,
@@ -412,6 +418,9 @@ const {
   ,
   deleteInventarioColaborador
 } = useInventarioColaboradores()
+
+const { startConteo } = useConteoColaborador()
+const { usuario } = useAuth()
 
 const searchText = ref('')
 const estadoFilter = ref('todos')
@@ -899,6 +908,28 @@ const closeModal = () => {
   currentItemId.value = ''
   isGeneratingBarcode.value = false
   resetForm()
+}
+
+const startConteoForSelectedCollaborator = async () => {
+  try {
+    const selected = String(colaboradorFilter.value || '').trim()
+    if (!selected) {
+      await showFeedback('Selecciona un colaborador primero', 'warning')
+      return
+    }
+    const colaborador = colaboradores.value.find((c) => String(c.id) === selected)
+    if (!colaborador) {
+      await showFeedback('Colaborador no encontrado', 'warning')
+      return
+    }
+    const inspectorId = usuario.value?.uid || ''
+    const inspectorNombre = usuario.value?.nombre || ''
+    const id = await startConteo({ colaboradorId: selected, colaboradorNombre: colaborador.nombre, inspectorId, inspectorNombre })
+    await getInventarioColaboradores()
+    await router.push(`/conteo/${id}`)
+  } catch (err) {
+    await showFeedback(err?.message || 'No se pudo iniciar el conteo', 'danger')
+  }
 }
 
 const getEstadoColor = (estado) => {

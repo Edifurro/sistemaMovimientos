@@ -6,6 +6,7 @@ import Productos from './pages/Productos.vue'
 import Colaboradores from './pages/Colaboradores.vue'
 import Prestamos from './pages/Prestamos.vue'
 import InventarioBodega from './pages/InventarioBodega.vue'
+import ConteoColaborador from './pages/ConteoColaborador.vue'
 
 const routes = [
   { path: '/', redirect: '/login' },
@@ -14,6 +15,7 @@ const routes = [
   { path: '/dashboard', component: Dashboard },
   { path: '/productos', component: Productos },
   { path: '/colaboradores', component: Colaboradores },
+  { path: '/conteo/:id', component: ConteoColaborador },
   { path: '/inventario-bodega', component: InventarioBodega },
   { path: '/prestamos', component: Prestamos }
 ]

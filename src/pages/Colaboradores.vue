@@ -96,19 +96,20 @@
 
         <ion-list v-else-if="filteredColaboradores.length > 0">
           <ion-item-sliding v-for="colab in filteredColaboradores" :key="colab.id">
-            <ion-item button @click="openDetailModal(colab)">
-              <ion-label>
-                <h2>{{ colab.nombre }}</h2>
-                <p>Código: {{ colab.codigoEmpleado || 'Sin codigo' }}</p>
-                <p>{{ colab.cargo || 'Sin cargo' }} · {{ colab.departamento || 'Sin departamento' }}</p>
-                <p class="descripcion-preview">{{ colab.descripcion || 'Sin descripcion' }}</p>
-                <p>Tel: {{ colab.telefono || 'Sin telefono' }}</p>
-              </ion-label>
-              <ion-badge slot="end" :color="colab.activo === false ? 'medium' : 'success'">
-                {{ colab.activo === false ? 'Inactivo' : 'Activo' }}
-              </ion-badge>
-            </ion-item>
+              <ion-item button @click="openDetailModal(colab)">
+                <ion-label>
+                  <h2>{{ colab.nombre }}</h2>
+                  <p>Código: {{ colab.codigoEmpleado || 'Sin codigo' }}</p>
+                  <p>{{ colab.cargo || 'Sin cargo' }} · {{ colab.departamento || 'Sin departamento' }}</p>
+                  <p class="descripcion-preview">{{ colab.descripcion || 'Sin descripcion' }}</p>
+                  <p>Tel: {{ colab.telefono || 'Sin telefono' }}</p>
+                </ion-label>
+                <ion-badge slot="end" :color="colab.activo === false ? 'medium' : 'success'">
+                  {{ colab.activo === false ? 'Inactivo' : 'Activo' }}
+                </ion-badge>
+              </ion-item>
             <ion-item-options side="end">
+              
               <ion-item-option color="primary" @click="openEditModal(colab)">
                 Editar
               </ion-item-option>
@@ -344,6 +345,8 @@ const {
   getColaboradores
 } = useColaboradores()
 
+// conteo action moved to Inventario module
+
 const isModalOpen = ref(false)
 const isEditing = ref(false)
 const editingId = ref('')
@@ -574,6 +577,8 @@ const toggleActivo = async (colab) => {
     await showToast(err?.message || 'No se pudo actualizar el estado.', 'danger')
   }
 }
+
+
 
 const openDetailModal = (colab) => {
   selectedColaborador.value = { ...colab }

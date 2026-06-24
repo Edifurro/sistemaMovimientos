@@ -27,6 +27,10 @@ const routes: Array<RouteRecordRaw> = [
     component: () => import('./pages/Colaboradores.vue')
   },
   {
+    path: '/conteo/:id',
+    component: () => import('./pages/ConteoColaborador.vue')
+  },
+  {
     path: '/prestamos',
     component: () => import('./pages/Prestamos.vue')
   },

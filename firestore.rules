@@ -1,0 +1,112 @@
+// Firestore Security Rules para Sistema de Movimientos
+// Copiar estas reglas en Firebase Console > Firestore > Rules
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helpers
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuth() &&
+        exists(/databases/$(database)/documents/usuarios/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol == 'admin';
+    }
+
+    // Colección usuarios: cada usuario puede leer/editar su perfil; admin puede leer todo
+    match /usuarios/{uid} {
+      // Crear sólo el propio perfil si aún no existe
+      allow create: if isAuth() && request.auth.uid == uid && !exists(/databases/$(database)/documents/usuarios/$(uid));
+      // Lectura/actualización: propietario o admin
+      allow read: if isAuth() && (request.auth.uid == uid || isAdmin());
+      allow update: if isAuth() && (request.auth.uid == uid || isAdmin());
+      // Borrar sólo admin
+      allow delete: if isAdmin();
+    }
+
+    // Productos: lectura por usuarios autenticados, cambios por admin
+    match /productos/{productId} {
+      allow read: if isAuth();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Colaboradores: lectura por autenticados, cambios por admin
+    match /colaboradores/{colaboradorId} {
+      allow read: if isAuth();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Inventario de colaboradores: lectura para autenticados;
+    // las operaciones de creación/actualización las permite el cliente autenticado
+    // (esto facilita el flujo de conteo y ajustes desde la app).
+    match /inventario_colaboradores/{itemId} {
+      allow read: if isAuth();
+      allow create: if isAuth() && request.resource.data.cantidad is int && request.resource.data.cantidad >= 0;
+      allow update: if isAuth() && request.resource.data.cantidad is int && request.resource.data.cantidad >= 0;
+      allow delete: if isAuth();
+    }
+
+    // Conteos por colaborador y su subcolección scannedItems
+    match /conteos_colaboradores/{conteoId} {
+      allow read: if isAuth();
+      // Crear conteo: el inspector debe ser el usuario autenticado
+      allow create: if isAuth() && request.resource.data.inspectorId == request.auth.uid;
+      // Actualizar: inspector originario o admin
+      allow update: if isAuth() && (resource.data.inspectorId == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
+
+      match /scannedItems/{scanId} {
+        allow read: if isAuth();
+        // Guardar un item escaneado mientras tenga al menos un barcode válido
+        allow create: if isAuth() && request.resource.data.barcode is string && request.resource.data.barcode.size() > 0;
+        // Permitir editar/eliminar si el usuario autenticado es el inspector del conteo (campo en el documento padre) o es admin
+        allow update, delete: if isAuth() && (
+          // obtener el documento padre y validar inspector
+          (get(/databases/$(database)/documents/conteos_colaboradores/$(conteoId)).data.inspectorId == request.auth.uid) || isAdmin()
+        );
+      }
+    }
+
+    // Prestamos: lectura general, creación por autenticados, edición sólo admin
+    match /prestamos/{prestamoId} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update, delete: if isAdmin();
+    }
+
+    // Reportes: lectura por autenticados, escritura deshabilitada
+    match /reportes/{reportId} {
+      allow read: if isAuth();
+      allow write: if false;
+    }
+
+    // Movimientos (historial general): lectura para autenticados, creación controlada
+    match /movimientos/{movimientoId} {
+      allow read: if isAuth();
+      // Permitir creación si el registro indica quien lo creó (createdBy == auth.uid) o si es admin
+      allow create: if isAuth() && (request.resource.data.createdBy == request.auth.uid || isAdmin());
+      allow update, delete: if false;
+    }
+
+    // Inventario bodega: sólo admin puede modificar stock
+    match /inventario_bodega/{itemId} {
+      allow read: if isAuth();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Movimientos bodega: lectura por autenticados, creación sólo admin
+    match /movimientos_bodega/{movimientoId} {
+      allow read: if isAuth();
+      allow create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    // Cualquier otra colección por defecto exige autenticación
+    match /{document=**} {
+      allow read, write: if isAuth() && isAdmin();
+    }
+  }
+}
