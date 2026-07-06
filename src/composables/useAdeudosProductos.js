@@ -1,0 +1,230 @@
+import { ref } from 'vue'
+import { db } from '../services/firebase'
+import {
+  collection,
+  getDocs,
+  getDoc,
+  doc,
+  runTransaction,
+  query,
+  where,
+  orderBy
+} from 'firebase/firestore'
+
+const ADEUDOS_COLLECTION = 'adeudosProductos'
+const PRODUCTS_COLLECTION = 'productos_nuevos'
+
+const adeudosProductos = ref([])
+const loading = ref(false)
+const error = ref(null)
+
+const toNonNegativeInteger = (value, fallback = 0) => {
+  const number = Number(value)
+  if (!Number.isFinite(number) || !Number.isInteger(number) || number < 0) return fallback
+  return number
+}
+
+
+const AREAS_TALLER = ['OFICINA', 'BODEGA', 'SEGUNDO_PISO']
+const AREA_LABELS = {
+  OFICINA: 'Oficina',
+  BODEGA: 'Bodega',
+  SEGUNDO_PISO: 'Segundo Piso'
+}
+
+const normalizeArea = (value) => {
+  const raw = String(value || '').trim().toUpperCase().replace(/\s+/g, '_')
+  if (raw === 'SEGUNDO_PISO' || raw === 'SEGUNDOPISO') return 'SEGUNDO_PISO'
+  if (raw === 'BODEGA') return 'BODEGA'
+  return 'OFICINA'
+}
+
+const emptyStockPorArea = () => AREAS_TALLER.reduce((acc, area) => {
+  acc[area] = { stock: 0, stockEmpezado: 0 }
+  return acc
+}, {})
+
+const normalizeStockPorArea = (producto = {}) => {
+  const categoriaControl = String(producto.categoriaControl || '').trim().toUpperCase()
+  const result = emptyStockPorArea()
+  if (producto.stockPorArea && typeof producto.stockPorArea === 'object') {
+    for (const [rawArea, data] of Object.entries(producto.stockPorArea)) {
+      const area = normalizeArea(rawArea)
+      result[area] = {
+        stock: toNonNegativeInteger(data?.stock),
+        stockEmpezado: categoriaControl === 'FRACCIONABLE' ? toNonNegativeInteger(data?.stockEmpezado) : 0
+      }
+    }
+  } else {
+    result.OFICINA = {
+      stock: toNonNegativeInteger(producto.stock),
+      stockEmpezado: categoriaControl === 'FRACCIONABLE' ? toNonNegativeInteger(producto.stockEmpezado) : 0
+    }
+  }
+  if (categoriaControl !== 'FRACCIONABLE') {
+    for (const area of AREAS_TALLER) result[area].stockEmpezado = 0
+  }
+  return result
+}
+
+const getTotalsFromStockPorArea = (stockPorArea = {}) => AREAS_TALLER.reduce((totals, area) => {
+  totals.stock += toNonNegativeInteger(stockPorArea?.[area]?.stock)
+  totals.stockEmpezado += toNonNegativeInteger(stockPorArea?.[area]?.stockEmpezado)
+  return totals
+}, { stock: 0, stockEmpezado: 0 })
+
+const mapDoc = (document) => ({ id: document.id, ...document.data() })
+
+export function useAdeudosProductos() {
+  const getAdeudosPendientes = async () => {
+    loading.value = true
+    error.value = null
+    try {
+      const q = query(
+        collection(db, ADEUDOS_COLLECTION),
+        where('estado', '==', 'pendiente'),
+        orderBy('createdAt', 'desc')
+      )
+      const snapshot = await getDocs(q)
+      adeudosProductos.value = snapshot.docs.map(mapDoc)
+      return adeudosProductos.value
+    } catch (err) {
+      error.value = err?.message || 'No se pudieron obtener los adeudos.'
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const getAdeudosByColaborador = async (colaboradorId, soloPendientes = true) => {
+    loading.value = true
+    error.value = null
+    try {
+      const constraints = [where('colaboradorId', '==', colaboradorId)]
+      if (soloPendientes) constraints.push(where('estado', '==', 'pendiente'))
+      const q = query(collection(db, ADEUDOS_COLLECTION), ...constraints)
+      const snapshot = await getDocs(q)
+      const result = snapshot.docs.map(mapDoc).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+      adeudosProductos.value = result
+      return result
+    } catch (err) {
+      error.value = err?.message || 'No se pudieron obtener los adeudos del colaborador.'
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const saldarAdeudoProducto = async ({ adeudoId, cantidadSaldar, observaciones, accionInventario = 'SIN_MOVIMIENTO_STOCK' }) => {
+    loading.value = true
+    error.value = null
+    try {
+      const cantidad = toNonNegativeInteger(cantidadSaldar)
+      const obs = String(observaciones || '').trim()
+
+      if (!adeudoId) throw new Error('Adeudo invalido.')
+      if (cantidad <= 0) throw new Error('La cantidad a saldar debe ser mayor a 0.')
+      if (!obs) throw new Error('Las observaciones son obligatorias para saldar un adeudo.')
+
+      await runTransaction(db, async (transaction) => {
+        const nowIso = new Date().toISOString()
+        const adeudoRef = doc(db, ADEUDOS_COLLECTION, adeudoId)
+        const adeudoSnap = await transaction.get(adeudoRef)
+        if (!adeudoSnap.exists()) throw new Error('Adeudo no encontrado.')
+
+        const adeudo = adeudoSnap.data()
+        if (adeudo.estado !== 'pendiente') throw new Error('Este adeudo ya no esta pendiente.')
+
+        const pendienteActual = Number(adeudo.cantidadPendiente || 0)
+        const saldadaActual = Number(adeudo.cantidadSaldada || 0)
+        if (cantidad > pendienteActual) throw new Error('No puedes saldar mas de lo pendiente.')
+
+        if (accionInventario === 'REINGRESAR_STOCK' || accionInventario === 'REINGRESAR_STOCK_EMPEZADO') {
+          const productoRef = doc(db, PRODUCTS_COLLECTION, adeudo.productoId)
+          const productoSnap = await transaction.get(productoRef)
+          if (!productoSnap.exists()) throw new Error('Producto del adeudo no encontrado.')
+          const producto = productoSnap.data()
+
+          if (accionInventario === 'REINGRESAR_STOCK_EMPEZADO' && producto.categoriaControl !== 'FRACCIONABLE') {
+            throw new Error('Solo productos fraccionables pueden reingresar como empezados.')
+          }
+
+          const areaOrigen = normalizeArea(adeudo.areaOrigen)
+          const stockPorArea = normalizeStockPorArea(producto)
+          stockPorArea[areaOrigen] = stockPorArea[areaOrigen] || { stock: 0, stockEmpezado: 0 }
+          if (accionInventario === 'REINGRESAR_STOCK') {
+            stockPorArea[areaOrigen].stock += cantidad
+          } else {
+            stockPorArea[areaOrigen].stockEmpezado += cantidad
+          }
+          const totals = getTotalsFromStockPorArea(stockPorArea)
+          transaction.update(productoRef, {
+            stockPorArea,
+            stock: totals.stock,
+            stockEmpezado: producto.categoriaControl === 'FRACCIONABLE' ? totals.stockEmpezado : 0,
+            updatedAt: nowIso
+          })
+        }
+
+        const nuevaSaldada = saldadaActual + cantidad
+        const nuevaPendiente = Math.max(0, pendienteActual - cantidad)
+        transaction.update(adeudoRef, {
+          cantidadSaldada: nuevaSaldada,
+          cantidadPendiente: nuevaPendiente,
+          estado: nuevaPendiente <= 0 ? 'saldado' : 'pendiente',
+          observaciones: [adeudo.observaciones, `Saldo: ${obs}`].filter(Boolean).join('\n'),
+          updatedAt: nowIso
+        })
+      })
+
+      await getAdeudosPendientes()
+      return true
+    } catch (err) {
+      error.value = err?.message || 'No se pudo saldar el adeudo.'
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const cancelarAdeudoProducto = async ({ adeudoId, observaciones = '' }) => {
+    loading.value = true
+    error.value = null
+    try {
+      if (!adeudoId) throw new Error('Adeudo invalido.')
+      const obs = String(observaciones || '').trim()
+      if (!obs) throw new Error('Las observaciones son obligatorias para cancelar un adeudo.')
+
+      await runTransaction(db, async (transaction) => {
+        const nowIso = new Date().toISOString()
+        const adeudoRef = doc(db, ADEUDOS_COLLECTION, adeudoId)
+        const adeudoSnap = await transaction.get(adeudoRef)
+        if (!adeudoSnap.exists()) throw new Error('Adeudo no encontrado.')
+        const adeudo = adeudoSnap.data()
+        transaction.update(adeudoRef, {
+          estado: 'cancelado',
+          observaciones: [adeudo.observaciones, `Cancelado: ${obs}`].filter(Boolean).join('\n'),
+          updatedAt: nowIso
+        })
+      })
+
+      await getAdeudosPendientes()
+      return true
+    } catch (err) {
+      error.value = err?.message || 'No se pudo cancelar el adeudo.'
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  return {
+    adeudosProductos,
+    loading,
+    error,
+    getAdeudosPendientes,
+    getAdeudosByColaborador,
+    saldarAdeudoProducto,
+    cancelarAdeudoProducto
+  }
+}

@@ -47,52 +47,152 @@
       </ion-content>
     </ion-popover>
 
-    <ion-content>
-      <div class="page-container">
-        <div class="page-header">
-          <h2>Gestión de Productos</h2>
-          <ion-button color="success" @click="openNewProductModal">
-            <ion-icon slot="start" :icon="add"></ion-icon>
-            Nuevo Producto
-          </ion-button>
-          <ion-button color="tertiary" fill="outline" @click="openQuickStockScanner">
-            Ajuste rápido (scanner)
-          </ion-button>
-        </div>
+    <ion-content class="products-content">
+      <div class="page-container products-page">
+        <section class="module-hero">
+          <div class="hero-copy">
+            <span class="eyebrow">Inventario</span>
+            <h2>Productos</h2>
+            <p>Controla productos, códigos y stock por área.</p>
+          </div>
+          <div class="hero-actions">
+            <ion-button color="success" class="hero-button" @click="openNewProductModal">
+              <ion-icon slot="start" :icon="add"></ion-icon>
+              Nuevo producto
+            </ion-button>
+            <ion-button color="primary" fill="outline" class="hero-button" @click="openQuickStockScanner">
+              <ion-icon slot="start" :icon="camera"></ion-icon>
+              Ajuste rápido
+            </ion-button>
+          </div>
+        </section>
 
-        <div class="search-container">
-          <ion-searchbar
-            v-model="searchTerm"
-            placeholder="Buscar por nombre o código de barras"
-            @ionClear="searchTerm = ''"
-            @ionInput="searchTerm = $event.detail.value || ''"
-            show-clear-button="focus"
-            inputmode="search"
-            enterkeyhint="search"
-          ></ion-searchbar>
-        </div>
+        <section class="overview-grid" aria-label="Resumen de productos">
+          <article class="overview-card overview-card--primary">
+            <span class="overview-label">Productos</span>
+            <strong>{{ productsSummary.total }}</strong>
+          </article>
+          <article class="overview-card">
+            <span class="overview-label">Con stock</span>
+            <strong>{{ productsSummary.conStock }}</strong>
+          </article>
+          <article class="overview-card">
+            <span class="overview-label">Stock bajo</span>
+            <strong>{{ productsSummary.stockBajo }}</strong>
+          </article>
+          <article class="overview-card">
+            <span class="overview-label">Prestados</span>
+            <strong>{{ productsSummary.prestados }}</strong>
+          </article>
+        </section>
 
-        <div v-if="loading" class="loading-state">
+        <section class="toolbar-card">
+          <div class="toolbar-copy">
+            <h3>Catálogo</h3>
+            <p>{{ filteredProducts.length }} registros</p>
+          </div>
+
+          <div class="catalog-controls">
+            <ion-searchbar
+              v-model="searchTerm"
+              placeholder="Buscar nombre o código"
+              @ionClear="searchTerm = ''"
+              @ionInput="searchTerm = $event.detail.value || ''"
+              show-clear-button="focus"
+              inputmode="search"
+              enterkeyhint="search"
+              class="product-searchbar"
+            ></ion-searchbar>
+
+            <ion-item lines="none" class="sort-control">
+              <ion-label>Orden</ion-label>
+              <ion-select
+                v-model="sortMode"
+                interface="popover"
+                aria-label="Ordenar productos"
+              >
+                <ion-select-option value="name-asc">A-Z</ion-select-option>
+                <ion-select-option value="name-desc">Z-A</ion-select-option>
+                <ion-select-option value="stock-desc">Mayor stock</ion-select-option>
+                <ion-select-option value="stock-asc">Menor stock</ion-select-option>
+              </ion-select>
+            </ion-item>
+          </div>
+
+          <div class="area-filter-panel" aria-label="Filtro de stock por área">
+            <div class="area-filter-copy">
+              <span>Stock mostrado</span>
+              <strong>{{ getSelectedAreaLabel() }}</strong>
+            </div>
+            <ion-segment
+              :value="areaFilter"
+              class="area-filter-segment"
+              @ionChange="areaFilter = $event.detail.value || 'TODAS'"
+            >
+              <ion-segment-button value="TODAS">Todas</ion-segment-button>
+              <ion-segment-button v-for="area in AREAS_TALLER" :key="area" :value="area">
+                {{ AREA_LABELS[area] }}
+              </ion-segment-button>
+            </ion-segment>
+          </div>
+        </section>
+
+        <div v-if="loading" class="loading-state modern-state">
           <ion-spinner name="circles"></ion-spinner>
-          <p>Cargando productos...</p>
+          <p>Cargando...</p>
         </div>
 
-        <ion-list v-else-if="filteredProducts.length > 0">
-          <ion-item-sliding v-for="product in filteredProducts" :key="product.id">
-            <ion-item @click="openEditProductModal(product)">
-              <ion-label>
-                <h2>{{ product.nombre }}</h2>
-                <p>Código: {{ product.codigoBarras || 'Sin código' }}</p>
-                <p>{{ product.tipo }} - Stock actual (en almacén): {{ getRealStock(product) }}</p>
-                <p>
-                  Prestado (fuera): {{ getLoanedStock(product.id) }} ·
-                  Stock total: {{ getTotalStock(product) }} ·
-                  <span :class="getRealStock(product) <= 0 ? 'stock-danger' : 'stock-ok'">
-                    Disponible real: {{ getAvailableStock(product) }}
-                  </span>
-                </p>
-                <p class="price">{{ product.precio ? '$' + product.precio : 'Sin precio' }}</p>
-              </ion-label>
+        <ion-list v-else-if="filteredProducts.length > 0" lines="none" class="products-list">
+          <ion-item-sliding v-for="product in filteredProducts" :key="product.id" class="product-sliding">
+            <ion-item class="product-card" button detail="false" lines="none" @click="openEditProductModal(product)">
+              <div class="product-card-content">
+                <div class="product-topline">
+                  <div class="product-title-block">
+                    <h3>{{ product.nombre }}</h3>
+                    <p>
+                      <span>{{ product.codigoBarras || 'Sin código' }}</span>
+                      <span v-if="product.precio"> · ${{ product.precio }}</span>
+                    </p>
+                  </div>
+                </div>
+
+                <div class="product-chip-row">
+                  <span class="ui-chip ui-chip--muted">{{ getControlLabel(product) }}</span>
+                  <span class="ui-chip ui-chip--muted">{{ getSelectedAreaLabel() }}</span>
+                  <span class="ui-chip ui-chip--muted">Mínimo: {{ getStockMinimo(product) }}</span>
+                  <span class="ui-chip" :class="getStockStatusClass(product)">{{ getStockStatusLabel(product) }}</span>
+                  <span v-if="product.generaAdeudo === false" class="ui-chip ui-chip--warning">No genera adeudo</span>
+                </div>
+
+                <div class="stock-grid product-stock-grid" :class="{ 'stock-grid--fraccionable': product.categoriaControl === 'FRACCIONABLE' }">
+                  <div class="stock-metric stock-metric--main">
+                    <span>Stock total</span>
+                    <strong>{{ getTotalStock(product, activeAreaFilter) }}</strong>
+                  </div>
+                  <div v-if="product.categoriaControl !== 'FRACCIONABLE'" class="stock-metric">
+                    <span>Disponible</span>
+                    <strong>{{ getAvailableStock(product, activeAreaFilter) }}</strong>
+                  </div>
+                  <div class="stock-metric">
+                    <span>Prestados</span>
+                    <strong>{{ getLoanedStock(product.id, activeAreaFilter) }}</strong>
+                  </div>
+                  <div class="stock-metric">
+                    <span>Mínimo</span>
+                    <strong>{{ getStockMinimo(product) }}</strong>
+                  </div>
+                  <template v-if="product.categoriaControl === 'FRACCIONABLE'">
+                    <div class="stock-metric">
+                      <span>Nuevos</span>
+                      <strong>{{ getStockNuevo(product, activeAreaFilter) }}</strong>
+                    </div>
+                    <div class="stock-metric">
+                      <span>Empezados</span>
+                      <strong>{{ getStockEmpezado(product, activeAreaFilter) }}</strong>
+                    </div>
+                  </template>
+                </div>
+              </div>
             </ion-item>
             <ion-item-options side="end">
               <ion-item-option color="danger" @click="requestDeleteFromList(product.id)">
@@ -102,8 +202,8 @@
           </ion-item-sliding>
         </ion-list>
 
-        <div v-else class="empty-state">
-          <p>{{ searchTerm ? 'No se encontraron productos' : 'No hay productos registrados' }}</p>
+        <div v-else class="empty-state modern-state">
+          <p>{{ searchTerm ? 'Sin coincidencias.' : 'No hay productos.' }}</p>
         </div>
       </div>
     </ion-content>
@@ -116,7 +216,7 @@
     >
       <ion-header>
         <ion-toolbar color="primary">
-          <ion-title>{{ isEditing ? 'Editar Producto' : 'Nuevo Producto' }}</ion-title>
+          <ion-title>{{ isEditing ? 'Editar producto' : 'Nuevo producto' }}</ion-title>
           <ion-buttons slot="end">
             <ion-button @click="saveProduct" :color="saveButtonColor" :disabled="!isFormValid || loading">
               <ion-icon v-if="saveSuccess" slot="start" :icon="checkmarkCircle"></ion-icon>
@@ -135,7 +235,7 @@
         <div class="modal-form">
           <div class="form-card">
           <ion-item>
-            <ion-label position="floating">Nombre del Producto</ion-label>
+            <ion-label position="floating">Nombre</ion-label>
             <ion-input
               v-model="formData.nombre"
               type="text"
@@ -152,7 +252,7 @@
 
           <div class="barcode-field-container">
             <ion-item>
-              <ion-label position="floating">Código de Barras</ion-label>
+              <ion-label position="floating">Código de barras</ion-label>
               <ion-input
                 v-model="formData.codigoBarras"
                 type="text"
@@ -183,12 +283,12 @@
                 @click="generateNewBarcode"
               >
                 <ion-icon slot="start" :icon="refresh"></ion-icon>
-                Generar nuevo
+                Generar código
               </ion-button>
             </div>
           </div>
           <p class="field-hint">
-            Modifica el código escaneando o generando uno nuevo.
+            Escanea o genera un código nuevo.
           </p>
           <p v-if="barcodeError" class="field-error">{{ barcodeError }}</p>
           <ion-button
@@ -198,57 +298,126 @@
             class="print-barcode-button"
             :disabled="isPrinting"
             color="primary"
-            @click="shareLabelToTinyPrint"
+            @click="shareLabelToPrinterApp"
           >
             <ion-icon slot="start" :icon="print"></ion-icon>
-            {{ isPrinting ? 'Generando etiqueta...' : 'Imprimir en TinyPrint' }}
+            {{ isPrinting ? 'Generando...' : 'Imprimir / compartir etiqueta' }}
           </ion-button>
           <p v-if="printError" class="field-error">{{ printError }}</p>
           </div>
 
           <div class="form-card form-section">
-            <label class="section-label">Tipo de Producto</label>
-            <ion-radio-group v-model="formData.tipo">
-              <ion-item>
-                <ion-label>RECURSO</ion-label>
-                <ion-radio slot="start" value="RECURSO"></ion-radio>
-              </ion-item>
-              <ion-item>
-                <ion-label>HERRAMIENTA</ion-label>
-                <ion-radio slot="start" value="HERRAMIENTA"></ion-radio>
-              </ion-item>
-            </ion-radio-group>
+            <label class="section-label">Forma de control del producto</label>
+            <ion-item>
+              <ion-label position="stacked">Cómo se controla este producto</ion-label>
+              <ion-select v-model="formData.categoriaControl" placeholder="Selecciona forma de control">
+                <ion-select-option value="UNIDAD">Por pieza</ion-select-option>
+                <ion-select-option value="FRACCIONABLE">Por envase / fraccionable</ion-select-option>
+                <ion-select-option value="HERRAMIENTA">Herramienta retornable</ion-select-option>
+              </ion-select>
+            </ion-item>
+            <p class="field-hint">
+              Esta opción define cómo se captura el stock y cómo se comporta el producto en salidas o préstamos.
+            </p>
+
+            <ion-item>
+              <ion-label>Puede generar adeudo</ion-label>
+              <ion-toggle v-model="formData.generaAdeudo"></ion-toggle>
+            </ion-item>
           </div>
 
-          <div class="form-card form-grid">
-            <div>
-              <ion-item>
-                <ion-label position="floating">Stock/Cantidad</ion-label>
+          <div class="form-card compact-card form-section">
+            <label class="section-label">Alerta de stock bajo</label>
+            <div class="field-stepper-card">
+              <span>Mínimo recomendado</span>
+              <div class="compact-stepper">
+                <ion-button fill="clear" class="stepper-btn" @click="changeStockMinimo(-1)">
+                  <ion-icon slot="icon-only" :icon="remove"></ion-icon>
+                </ion-button>
                 <ion-input
-                  v-model.number="formData.stock"
-                  type="number"
-                  min="0"
+                  v-model.number="formData.stockMinimo"
+                  type="text"
+                  inputmode="numeric"
+                  pattern="[0-9]*"
+                  class="stepper-input"
                   :legacy="true"
-                  @ionBlur="setTouched('stock')"
+                  @ionBlur="normalizeStockMinimo"
                 ></ion-input>
-              </ion-item>
-              <p v-if="touched.stock && stockError" class="field-error">{{ stockError }}</p>
+                <ion-button fill="clear" class="stepper-btn" @click="changeStockMinimo(1)">
+                  <ion-icon slot="icon-only" :icon="add"></ion-icon>
+                </ion-button>
+              </div>
             </div>
+            <p class="field-hint">
+              Si el disponible del producto llega a este número o menos, se marcará como stock bajo. Usa 0 para no mostrar alerta.
+            </p>
+            <p v-if="touched.stockMinimo && stockMinimoError" class="field-error">{{ stockMinimoError }}</p>
+          </div>
 
-            <div>
-              <ion-item>
-                <ion-label position="floating">Precio (Opcional)</ion-label>
-                <ion-input
-                  v-model.number="formData.precio"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  :legacy="true"
-                  @ionBlur="setTouched('precio')"
-                ></ion-input>
-              </ion-item>
-              <p v-if="touched.precio && precioError" class="field-error">{{ precioError }}</p>
+          <div class="form-card compact-card form-section">
+            <label class="section-label">Stock por área</label>
+            <div class="area-stock-grid">
+              <div v-for="area in AREAS_TALLER" :key="area" class="area-stock-card">
+                <h4>{{ AREA_LABELS[area] }}</h4>
+                <div class="field-stepper-card">
+                  <span>Nuevos</span>
+                  <div class="compact-stepper">
+                    <ion-button fill="clear" class="stepper-btn" @click="changeAreaStock(area, 'stock', -1)">
+                      <ion-icon slot="icon-only" :icon="remove"></ion-icon>
+                    </ion-button>
+                    <ion-input
+                      v-model.number="formData.stockPorArea[area].stock"
+                      type="text"
+                      inputmode="numeric"
+                      pattern="[0-9]*"
+                      class="stepper-input"
+                      :legacy="true"
+                      @ionBlur="normalizeAreaStock(area, 'stock')"
+                    ></ion-input>
+                    <ion-button fill="clear" class="stepper-btn" @click="changeAreaStock(area, 'stock', 1)">
+                      <ion-icon slot="icon-only" :icon="add"></ion-icon>
+                    </ion-button>
+                  </div>
+                </div>
+                <div v-if="formData.categoriaControl === 'FRACCIONABLE'" class="field-stepper-card">
+                  <span>Empezados</span>
+                  <div class="compact-stepper">
+                    <ion-button fill="clear" class="stepper-btn" @click="changeAreaStock(area, 'stockEmpezado', -1)">
+                      <ion-icon slot="icon-only" :icon="remove"></ion-icon>
+                    </ion-button>
+                    <ion-input
+                      v-model.number="formData.stockPorArea[area].stockEmpezado"
+                      type="text"
+                      inputmode="numeric"
+                      pattern="[0-9]*"
+                      class="stepper-input"
+                      :legacy="true"
+                      @ionBlur="normalizeAreaStock(area, 'stockEmpezado')"
+                    ></ion-input>
+                    <ion-button fill="clear" class="stepper-btn" @click="changeAreaStock(area, 'stockEmpezado', 1)">
+                      <ion-icon slot="icon-only" :icon="add"></ion-icon>
+                    </ion-button>
+                  </div>
+                </div>
+              </div>
             </div>
+            <p v-if="touched.stock && stockError" class="field-error">{{ stockError }}</p>
+            <p v-if="touched.stockEmpezado && stockEmpezadoError" class="field-error">{{ stockEmpezadoError }}</p>
+          </div>
+
+          <div class="form-card compact-card">
+            <ion-item>
+              <ion-label position="floating">Precio (opcional)</ion-label>
+              <ion-input
+                v-model.number="formData.precio"
+                type="number"
+                min="0"
+                step="0.01"
+                :legacy="true"
+                @ionBlur="setTouched('precio')"
+              ></ion-input>
+            </ion-item>
+            <p v-if="touched.precio && precioError" class="field-error">{{ precioError }}</p>
           </div>
 
           <div v-if="modalError || error" class="error-message">
@@ -257,7 +426,7 @@
 
           <div v-if="isEditing" class="modal-actions">
             <ion-button expand="block" color="danger" @click="confirmDelete">
-              Eliminar Producto
+              Eliminar producto
             </ion-button>
           </div>
         </div>
@@ -276,8 +445,8 @@
     <!-- Modal de confirmación para eliminar -->
     <ion-alert
       :is-open="showDeleteConfirm"
-      header="Confirmar Eliminación"
-      message="¿Estás seguro de que deseas eliminar este producto?"
+      header="Eliminar producto"
+      message="¿Deseas eliminar este producto?"
       :buttons="deleteConfirmButtons"
     ></ion-alert>
 
@@ -303,7 +472,7 @@
     <ion-modal :is-open="quickModalOpen" css-class="quick-stock-modal" @did-dismiss="() => { quickModalOpen = false }">
       <ion-header>
         <ion-toolbar color="primary">
-          <ion-title>Ajuste rápido de stock</ion-title>
+          <ion-title>Ajuste rápido</ion-title>
           <ion-buttons slot="end">
             <ion-button @click="quickModalOpen = false" class="close-modal-btn">
               <ion-icon slot="start" :icon="closeOutline"></ion-icon>
@@ -312,33 +481,99 @@
           </ion-buttons>
         </ion-toolbar>
       </ion-header>
-      <ion-content>
-        <div class="modal-form">
+      <ion-content class="modal-content">
+        <div class="modal-form quick-stock-form">
           <div v-if="quickScannerError" class="error-message">{{ quickScannerError }}</div>
-          <div v-if="quickProduct">
-            <h3>{{ quickProduct.nombre }}</h3>
-            <p>Código: {{ quickProduct.codigoBarras || '-' }}</p>
-            <p>Stock actual: {{ quickProduct.stock || 0 }}</p>
 
-            <ion-item>
-              <ion-label>Tipo</ion-label>
-              <ion-segment
-                :value="quickAdjust"
-                @ionChange="quickAdjust = $event.detail.value || 'add'"
-              >
-                <ion-segment-button value="add">Entrada (+)</ion-segment-button>
-                <ion-segment-button value="subtract">Salida (-)</ion-segment-button>
-              </ion-segment>
-            </ion-item>
+          <div v-if="quickProduct" class="quick-panel">
+            <div class="quick-product-card">
+              <div>
+                <span class="eyebrow">Detectado</span>
+                <h3>{{ quickProduct.nombre }}</h3>
+                <p>Código: {{ quickProduct.codigoBarras || '-' }}</p>
+              </div>
+              <div class="product-chip-row compact-chip-row">
+                <span class="ui-chip ui-chip--muted">{{ getControlLabel(quickProduct) }}</span>
+                <span class="ui-chip ui-chip--muted">Mínimo: {{ getStockMinimo(quickProduct) }}</span>
+                <span class="ui-chip" :class="getStockStatusClass(quickProduct)">{{ getStockStatusLabel(quickProduct) }}</span>
+              </div>
+            </div>
 
-            <ion-item>
-              <ion-label position="stacked">Cantidad</ion-label>
-              <ion-input v-model.number="quickCantidad" type="number" min="1" :legacy="true"></ion-input>
-            </ion-item>
+            <div class="stock-grid stock-grid--quick">
+              <div class="stock-metric stock-metric--main">
+                <span>Stock total</span>
+                <strong>{{ getTotalStock(quickProduct, quickArea) }}</strong>
+              </div>
+              <div v-if="quickProduct.categoriaControl !== 'FRACCIONABLE'" class="stock-metric">
+                <span>Disponible</span>
+                <strong>{{ getAvailableStock(quickProduct, quickArea) }}</strong>
+              </div>
+              <div class="stock-metric">
+                <span>Prestados</span>
+                <strong>{{ getLoanedStock(quickProduct.id, quickArea) }}</strong>
+              </div>
+              <div class="stock-metric">
+                <span>Mínimo</span>
+                <strong>{{ getStockMinimo(quickProduct) }}</strong>
+              </div>
+              <template v-if="quickProduct.categoriaControl === 'FRACCIONABLE'">
+                <div class="stock-metric">
+                  <span>Nuevos</span>
+                  <strong>{{ getStockNuevo(quickProduct, quickArea) }}</strong>
+                </div>
+                <div class="stock-metric">
+                  <span>Empezados</span>
+                  <strong>{{ getStockEmpezado(quickProduct, quickArea) }}</strong>
+                </div>
+              </template>
+            </div>
 
-            <ion-button expand="block" @click="applyQuickStockAdjustment">Confirmar ajuste</ion-button>
+            <div class="form-card modern-form-card">
+              <ion-item v-if="quickProduct.categoriaControl === 'FRACCIONABLE'" lines="full">
+                <ion-label position="stacked">Afectar stock</ion-label>
+                <ion-select v-model="quickStockTarget">
+                  <ion-select-option value="stock">Envases nuevos/completos</ion-select-option>
+                  <ion-select-option value="stockEmpezado">Empezados/sobrantes</ion-select-option>
+                </ion-select>
+              </ion-item>
+
+              <ion-item lines="full">
+                <ion-label>Tipo de ajuste</ion-label>
+                <ion-segment
+                  :value="quickAdjust"
+                  @ionChange="quickAdjust = $event.detail.value || 'add'"
+                >
+                  <ion-segment-button value="add">Entrada</ion-segment-button>
+                  <ion-segment-button value="subtract">Salida</ion-segment-button>
+                </ion-segment>
+              </ion-item>
+
+              <div class="field-stepper-card field-stepper-card--quick">
+                <span>Cantidad</span>
+                <div class="compact-stepper compact-stepper--quick">
+                  <ion-button fill="clear" class="stepper-btn" @click="changeQuickCantidad(-1)">
+                    <ion-icon slot="icon-only" :icon="remove"></ion-icon>
+                  </ion-button>
+                  <ion-input
+                    v-model.number="quickCantidad"
+                    type="text"
+                    inputmode="numeric"
+                    pattern="[0-9]*"
+                    class="stepper-input"
+                    :legacy="true"
+                    @ionBlur="normalizeQuickCantidad"
+                  ></ion-input>
+                  <ion-button fill="clear" class="stepper-btn" @click="changeQuickCantidad(1)">
+                    <ion-icon slot="icon-only" :icon="add"></ion-icon>
+                  </ion-button>
+                </div>
+              </div>
+            </div>
+
+            <ion-button expand="block" class="primary-action" @click="applyQuickStockAdjustment">Confirmar ajuste</ion-button>
           </div>
-          <div v-else class="empty-state">
+
+          <div v-else class="empty-state modern-state">
             <p>Escanea un código para seleccionar un producto.</p>
           </div>
         </div>
@@ -348,7 +583,7 @@
   </template>
 
   <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { useRouter } from 'vue-router'
 import { Capacitor } from '@capacitor/core'
@@ -379,24 +614,27 @@ import {
   IonFooter,
   IonInput,
   IonTextarea,
-  IonRadioGroup,
-  IonRadio,
   IonSegment,
   IonSegmentButton,
   IonSpinner,
   IonAlert,
   IonToast,
   IonSearchbar,
+  IonSelect,
+  IonSelectOption,
+  IonToggle,
   onIonViewWillLeave
 } from '@ionic/vue'
-import { add, checkmarkCircle, apps, home, cube, people, swapHorizontal, print, camera, refresh, clipboardOutline, closeOutline } from 'ionicons/icons'
+import { add, remove, checkmarkCircle, apps, home, cube, people, swapHorizontal, print, camera, refresh, clipboardOutline, closeOutline } from 'ionicons/icons'
 
 const router = useRouter()
-const { products, loading, error, createProduct, getProducts, updateProduct, deleteProduct: deleteProductAPI } = useProducts()
+const { products, loading, error, createProduct, getProducts, migrateLegacyProductsToStockPorArea, updateProduct, deleteProduct: deleteProductAPI } = useProducts()
 const { logMovimiento } = useMovimientos()
 const { getPrestamos } = usePrestamos()
 
 const searchTerm = ref('')
+const areaFilter = ref('TODAS')
+const sortMode = ref('name-asc')
 const isModulesMenuOpen = ref(false)
 const isModalOpen = ref(false)
 const isEditing = ref(false)
@@ -417,362 +655,121 @@ const printToastColor = ref('success')
 const touched = ref({
   nombre: false,
   stock: false,
+  stockEmpezado: false,
+  stockMinimo: false,
   precio: false
 })
 const loanedStockMap = ref({})
 const sessionGeneratedCodes = ref(new Set())
 
+const AREAS_TALLER = ['OFICINA', 'BODEGA', 'SEGUNDO_PISO']
+const AREA_LABELS = { OFICINA: 'Oficina', BODEGA: 'Bodega', SEGUNDO_PISO: 'Segundo Piso' }
+
+const createEmptyStockPorArea = () => AREAS_TALLER.reduce((acc, area) => {
+  acc[area] = { stock: 0, stockEmpezado: 0 }
+  return acc
+}, {})
+
+const normalizeAreaKey = (value) => {
+  const raw = String(value || '').trim().toUpperCase().replace(/\s+/g, '_')
+  if (raw === 'SEGUNDO_PISO' || raw === 'SEGUNDOPISO') return 'SEGUNDO_PISO'
+  if (raw === 'BODEGA') return 'BODEGA'
+  return 'OFICINA'
+}
+
+const normalizeStockPorAreaLocal = (product = {}) => {
+  const result = createEmptyStockPorArea()
+  if (product.stockPorArea && typeof product.stockPorArea === 'object') {
+    Object.entries(product.stockPorArea).forEach(([rawArea, data]) => {
+      const area = normalizeAreaKey(rawArea)
+      result[area] = {
+        stock: Number(data?.stock || 0),
+        stockEmpezado: product.categoriaControl === 'FRACCIONABLE' ? Number(data?.stockEmpezado || 0) : 0
+      }
+    })
+  } else {
+    result.OFICINA = {
+      stock: Number(product.stock || 0),
+      stockEmpezado: product.categoriaControl === 'FRACCIONABLE' ? Number(product.stockEmpezado || 0) : 0
+    }
+  }
+  if (product.categoriaControl !== 'FRACCIONABLE') AREAS_TALLER.forEach((area) => { result[area].stockEmpezado = 0 })
+  return result
+}
+
+const activeAreaFilter = computed(() => areaFilter.value)
+
 const formData = ref({
   nombre: '',
   descripcion: '',
-  tipo: 'RECURSO',
+  categoriaControl: 'UNIDAD',
+  generaAdeudo: true,
+  stockMinimo: 0,
   stock: 0,
+  stockEmpezado: 0,
+  stockPorArea: createEmptyStockPorArea(),
   precio: null,
   codigoBarras: ''
 })
 
-const LABEL_WIDTH_PX = 320
-const LABEL_HEIGHT_PX = 160
-const LABEL_RENDER_SCALE = 3
+const LABEL_WIDTH_MM = 50.8
+const LABEL_HEIGHT_MM = 25.4
+const LABEL_WIDTH_PX = 406
+const LABEL_HEIGHT_PX = 203
+const LABEL_RENDER_SCALE = 2
 
-const generateBarcode = () => {
-  // Codigo numerico de 8 digitos para mejorar lectura en escaner termico.
-  // Validar unicidad contra codigos existentes en BD y en sesion actual.
-  const existingCodes = new Set([
-    ...sessionGeneratedCodes.value,
-    ...products.value.map(p => p.codigoBarras).filter(Boolean)
-  ])
+const safeLabelFileName = (code) => String(code || 'etiqueta')
+  .trim()
+  .replace(/[^a-zA-Z0-9_-]+/g, '-')
+  .replace(/^-+|-+$/g, '') || 'etiqueta'
 
-  let codigo = ''
-  let attempts = 0
-  const maxAttempts = 20
+const mmToPdfPoints = (mm) => (Number(mm || 0) / 25.4) * 72
 
-  while (attempts < maxAttempts) {
-    codigo = Math.floor(10000000 + Math.random() * 90000000).toString()
-    if (!existingCodes.has(codigo)) {
-      sessionGeneratedCodes.value.add(codigo)
-      return codigo
-    }
-    attempts++
-  }
+const buildPdfBase64WithImage = (jpegBase64, imageWidth, imageHeight) => {
+  const pageWidth = mmToPdfPoints(LABEL_WIDTH_MM)
+  const pageHeight = mmToPdfPoints(LABEL_HEIGHT_MM)
+  const imageBinary = atob(jpegBase64)
+  const content = `q\n${pageWidth.toFixed(2)} 0 0 ${pageHeight.toFixed(2)} 0 0 cm\n/Im1 Do\nQ\n`
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth.toFixed(2)} ${pageHeight.toFixed(2)}] /Resources << /XObject << /Im1 5 0 R >> >> /Contents 4 0 R >>`,
+    `<< /Length ${content.length} >>\nstream\n${content}endstream`,
+    `<< /Type /XObject /Subtype /Image /Width ${imageWidth} /Height ${imageHeight} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imageBinary.length} >>\nstream\n${imageBinary}\nendstream`
+  ]
 
-  // Si fallamos 20 intentos, usar timestamp como fallback para garantizar unicidad
-  codigo = Math.floor(10000000 + (Date.now() % 90000000)).toString()
-  sessionGeneratedCodes.value.add(codigo)
-  return codigo
-}
-
-const resetForm = () => {
-  modalError.value = ''
-  saveSuccess.value = false
-  printError.value = ''
-  barcodeError.value = ''
-  touched.value = {
-    nombre: false,
-    stock: false,
-    precio: false
-  }
-  formData.value = {
-    nombre: '',
-    descripcion: '',
-    tipo: 'RECURSO',
-    stock: 0,
-    precio: null,
-    codigoBarras: ''
-  }
-}
-
-const setTouched = (field) => {
-  touched.value[field] = true
-}
-
-const nombreError = computed(() => {
-  return formData.value.nombre?.trim() ? '' : 'El nombre del producto es obligatorio.'
-})
-
-const stockError = computed(() => {
-  const stock = Number(formData.value.stock)
-  if (!Number.isFinite(stock)) {
-    return 'El stock debe ser un numero.'
-  }
-  if (!Number.isInteger(stock) || stock < 0) {
-    return 'El stock debe ser un numero entero mayor o igual a 0.'
-  }
-  return ''
-})
-
-const precioError = computed(() => {
-  const precioRaw = formData.value.precio
-  if (precioRaw === '' || precioRaw === null || precioRaw === undefined) {
-    return ''
-  }
-  const precio = Number(precioRaw)
-  if (!Number.isFinite(precio)) {
-    return 'El precio debe ser un numero valido.'
-  }
-  if (precio < 0) {
-    return 'El precio no puede ser negativo.'
-  }
-  return ''
-})
-
-const isFormValid = computed(() => {
-  return !nombreError.value && !stockError.value && !precioError.value
-})
-
-const saveButtonColor = computed(() => {
-  return saveSuccess.value ? 'success' : 'primary'
-})
-
-const saveButtonLabelShort = computed(() => {
-  if (saveSuccess.value) {
-    return 'Guardado'
-  }
-  return loading.value ? 'Guardando...' : 'Guardar'
-})
-
-const saveButtonLabelFull = computed(() => {
-  if (saveSuccess.value) {
-    return 'Guardado correctamente'
-  }
-  return loading.value ? 'Guardando...' : 'Guardar Producto'
-})
-
-const calculateLoanedStock = (prestamosActivos = []) => {
-  const map = {}
-
-  prestamosActivos.forEach((prestamo) => {
-    if (prestamo.estado !== 'activo') {
-      return
-    }
-
-    ;(prestamo.detalles || []).forEach((item) => {
-      const total = Number(item.cantidad || 0)
-      const devuelto = Number(item.cantidadDevuelta || 0)
-      const pendiente = Math.max(0, total - devuelto)
-
-      if (!item.productoId || pendiente <= 0) {
-        return
-      }
-
-      map[item.productoId] = (map[item.productoId] || 0) + pendiente
-    })
+  let pdf = '%PDF-1.4\n%\xFF\xFF\xFF\xFF\n'
+  const offsets = [0]
+  objects.forEach((object, index) => {
+    offsets[index + 1] = pdf.length
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`
   })
 
-  loanedStockMap.value = map
-}
-
-const getLoanedStock = (productId) => {
-  return Number(loanedStockMap.value[productId] || 0)
-}
-
-const getRealStock = (product) => {
-  return Number(product.stock || 0)
-}
-
-const getTotalStock = (product) => {
-  return getRealStock(product) + getLoanedStock(product.id)
-}
-
-const getAvailableStock = (product) => {
-  // El stock real ya viene descontado al prestar desde backend.
-  return getRealStock(product)
-}
-
-const filteredProducts = computed(() => {
-  if (!searchTerm.value.trim()) {
-    return products.value
+  const xrefOffset = pdf.length
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`
+  for (let i = 1; i <= objects.length; i += 1) {
+    pdf += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`
   }
-  
-  const query = searchTerm.value.toLowerCase().trim()
-  return products.value.filter((product) => {
-    const nombre = (product.nombre || '').toLowerCase()
-    const codigo = (product.codigoBarras || '').toLowerCase()
-    return nombre.includes(query) || codigo.includes(query)
-  })
-})
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`
 
-const isBarcodeUnique = (barcode) => {
-  const trimmed = String(barcode || '').trim()
-  if (!trimmed) return false
-  
-  // Validar contra códigos existentes en BD y en sesión actual
-  const existingCodes = new Set([
-    ...sessionGeneratedCodes.value,
-    ...products.value.map(p => p.codigoBarras).filter(Boolean)
-  ])
-  
-  return !existingCodes.has(trimmed)
+  return btoa(pdf)
 }
 
-const generateNewBarcode = () => {
-  formData.value.codigoBarras = generateBarcode()
-  barcodeError.value = ''
-}
-
-const openBarcodeScanner = async () => {
-  barcodeError.value = ''
-  if (isScanning.value || isModalScannerBusy.value) return
-  if (isEditing.value) return // No permitir escaneo al editar
-
-  if (!Capacitor?.isNativePlatform?.()) {
-    barcodeError.value = 'El escaneo solo funciona en la app instalada.'
-    return
-  }
-
-  isModalScannerBusy.value = true
-  try {
-    const { supported } = await BarcodeScanner.isSupported()
-    if (!supported) {
-      barcodeError.value = 'Este dispositivo no soporta escaneo de códigos.'
-      return
-    }
-
-    const permissions = await BarcodeScanner.requestPermissions()
-    if (permissions.camera !== 'granted') {
-      barcodeError.value = 'Necesitas permitir acceso a la cámara.'
-      return
-    }
-
-    if (Capacitor.getPlatform() === 'android') {
-      const moduleStatus = await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable()
-      if (!moduleStatus.available) {
-        barcodeError.value = 'Instalando módulo de escaneo...'
-        await BarcodeScanner.installGoogleBarcodeScannerModule()
-        
-        // Esperar a que se instale
-        const started = Date.now()
-        while (Date.now() - started < MODULE_INSTALL_TIMEOUT_MS) {
-          const status = await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable()
-          if (status.available) {
-            barcodeError.value = ''
-            break
-          }
-          await new Promise((r) => setTimeout(r, MODULE_INSTALL_POLL_MS))
-        }
-      }
-    }
-
-    isScanning.value = true
-    let scanTimeout = false
-    let scannerTimeoutId = setTimeout(() => {
-      scanTimeout = true
-      BarcodeScanner.stopScan().catch(() => {})
-      barcodeError.value = 'Tiempo de escaneo agotado (15s).'
-      isScanning.value = false
-    }, SCANNER_TIMEOUT_MS)
-
-    const result = await BarcodeScanner.scan({
-      formats: [
-        BarcodeFormat.Code128,
-        BarcodeFormat.Code39,
-        BarcodeFormat.Ean13,
-        BarcodeFormat.Ean8,
-        BarcodeFormat.UpcA,
-        BarcodeFormat.UpcE,
-        BarcodeFormat.Itf
-      ]
-    })
-
-    if (scannerTimeoutId) {
-      clearTimeout(scannerTimeoutId)
-      scannerTimeoutId = null
-    }
-
-    if (scanTimeout) return
-
-    const first = result?.barcodes?.[0]
-    const scannedCode = (first?.rawValue || first?.displayValue || '').trim()
-    
-    if (!scannedCode) {
-      barcodeError.value = 'No se detectó ningún código.'
-      return
-    }
-
-    // Validar que el código sea único
-    if (!isBarcodeUnique(scannedCode)) {
-      barcodeError.value = `El código de barras ${scannedCode} ya existe.`
-      return
-    }
-
-    formData.value.codigoBarras = scannedCode
-    barcodeError.value = ''
-  } catch (err) {
-    const msg = err?.message || ''
-    if (!msg.includes('cancel') && !msg.includes('dismiss') && !msg.includes('timeout')) {
-      barcodeError.value = err?.message || 'No se pudo iniciar el escáner.'
-    }
-  } finally {
-    isScanning.value = false
-    isModalScannerBusy.value = false
-    await new Promise((r) => setTimeout(r, DEBOUNCE_DELAY_MS))
-  }
-}
-
-const refreshProductsAndLoanedStock = async () => {
-  const [allProducts, allPrestamos] = await Promise.all([getProducts(), getPrestamos()])
-  calculateLoanedStock(allPrestamos)
-  return allProducts
-}
-
-const openModulesMenu = () => {
-  isModulesMenuOpen.value = true
-}
-
-const navigateTo = async (path) => {
-  isModulesMenuOpen.value = false
-  await router.push(path)
-}
-
-const openNewProductModal = () => {
-  isEditing.value = false
-  currentProductId.value = null
-  resetForm()
-  formData.value.codigoBarras = generateBarcode()
-  barcodeError.value = ''
-  isModalOpen.value = true
-}
-
-const openEditProductModal = (product) => {
-  isEditing.value = true
-  currentProductId.value = product.id
-  printError.value = ''
-  formData.value = {
-    nombre: product.nombre,
-    descripcion: product.descripcion || '',
-    tipo: product.tipo,
-    stock: product.stock,
-    precio: product.precio || null,
-    codigoBarras: product.codigoBarras || ''
-  }
-  isModalOpen.value = true
-}
-
-const closeModal = () => {
-  isModalOpen.value = false
-  showDeleteConfirm.value = false
-  resetForm()
-}
-
-const buildLabelDataUrl = (code) => {
+const buildLabelDataUrl = (code, mimeType = 'image/png') => {
   const canvas = document.createElement('canvas')
   canvas.width = LABEL_WIDTH_PX * LABEL_RENDER_SCALE
   canvas.height = LABEL_HEIGHT_PX * LABEL_RENDER_SCALE
   const ctx = canvas.getContext('2d')
-  if (!ctx) {
-    throw new Error('No se pudo crear el lienzo de impresion.')
-  }
+  if (!ctx) throw new Error('No se pudo crear el lienzo de impresion.')
 
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, canvas.width, canvas.height)
 
   const barcodeCanvas = document.createElement('canvas')
-  barcodeCanvas.width = LABEL_WIDTH_PX * LABEL_RENDER_SCALE
-  barcodeCanvas.height = 104 * LABEL_RENDER_SCALE
+  barcodeCanvas.width = canvas.width
+  barcodeCanvas.height = Math.round(canvas.height * 0.72)
   const barcodeCtx = barcodeCanvas.getContext('2d')
-  if (!barcodeCtx) {
-    throw new Error('No se pudo crear el lienzo del codigo de barras.')
-  }
+  if (!barcodeCtx) throw new Error('No se pudo crear el lienzo del codigo de barras.')
 
   barcodeCtx.fillStyle = '#ffffff'
   barcodeCtx.fillRect(0, 0, barcodeCanvas.width, barcodeCanvas.height)
@@ -780,27 +777,19 @@ const buildLabelDataUrl = (code) => {
   JsBarcode(barcodeCanvas, code, {
     format: 'CODE128',
     displayValue: false,
-    marginLeft: 34,
-    marginRight: 34,
+    marginLeft: 24,
+    marginRight: 24,
     marginTop: 8,
     marginBottom: 8,
-    height: 86 * LABEL_RENDER_SCALE,
-    width: 2.4,
+    height: Math.round(barcodeCanvas.height * 0.82),
+    width: 2.2,
     lineColor: '#000000',
     background: '#ffffff'
   })
 
   ctx.imageSmoothingEnabled = false
-  // Añadir 1.5 cm extra de margen superior (previos 1.0cm + 0.5cm adicional)
-  // y 1.0 cm extra de margen derecho (previos 0.5cm + 0.5cm adicional) para ajustar la etiqueta física.
-  const extraTopMarginCm = 1.5
-  const extraRightMarginCm = 0.8
-  const pxPerCm = 96 / 2.54
-  const extraTopMarginPx = Math.round(extraTopMarginCm * pxPerCm * LABEL_RENDER_SCALE)
-  const extraRightMarginPx = Math.round(extraRightMarginCm * pxPerCm * LABEL_RENDER_SCALE)
-
-  const destWidth = Math.max(0, canvas.width - extraRightMarginPx)
-
+  const drawHeight = Math.round(canvas.height * 0.72)
+  const drawTop = Math.round((canvas.height - drawHeight) / 2)
   ctx.drawImage(
     barcodeCanvas,
     0,
@@ -808,12 +797,10 @@ const buildLabelDataUrl = (code) => {
     barcodeCanvas.width,
     barcodeCanvas.height,
     0,
-    8 * LABEL_RENDER_SCALE + extraTopMarginPx,
-    destWidth,
-    104 * LABEL_RENDER_SCALE
+    drawTop,
+    canvas.width,
+    drawHeight
   )
-
-  // No dibujar el texto del código debajo del barcode (sólo la imagen)
 
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
   const data = imageData.data
@@ -827,21 +814,24 @@ const buildLabelDataUrl = (code) => {
   }
   ctx.putImageData(imageData, 0, 0)
 
-  return canvas.toDataURL('image/png')
+  return canvas.toDataURL(mimeType, 1)
 }
 
-const buildLabelFileUri = async (code) => {
-  const dataUrl = buildLabelDataUrl(code)
-  const base64Data = dataUrl.split(',')[1]
+const buildLabelPdfFileUri = async (code) => {
+  const jpegDataUrl = buildLabelDataUrl(code, 'image/jpeg')
+  const jpegBase64 = jpegDataUrl.split(',')[1]
+  if (!jpegBase64) throw new Error('No se pudo generar el PDF de impresión.')
 
-  if (!base64Data) {
-    throw new Error('No se pudo generar la imagen de impresión.')
-  }
+  const pdfBase64 = buildPdfBase64WithImage(
+    jpegBase64,
+    LABEL_WIDTH_PX * LABEL_RENDER_SCALE,
+    LABEL_HEIGHT_PX * LABEL_RENDER_SCALE
+  )
 
-  const fileName = `tinyprint-${code}.png`
+  const fileName = `etiqueta-${safeLabelFileName(code)}-2x1.pdf`
   const result = await Filesystem.writeFile({
     path: fileName,
-    data: base64Data,
+    data: pdfBase64,
     directory: Directory.Cache,
     recursive: true
   })
@@ -849,13 +839,11 @@ const buildLabelFileUri = async (code) => {
   return result.uri
 }
 
-const shareLabelToTinyPrint = async () => {
+const shareLabelToPrinterApp = async () => {
   printError.value = ''
   showPrintToast.value = false
 
-  if (!isEditing.value) {
-    return
-  }
+  if (!isEditing.value) return
 
   const barcode = (formData.value.codigoBarras || '').trim()
   if (!barcode) {
@@ -870,24 +858,19 @@ const shareLabelToTinyPrint = async () => {
 
   try {
     isPrinting.value = true
-    const fileUri = await buildLabelFileUri(barcode)
-    
+    const fileUri = await buildLabelPdfFileUri(barcode)
     await Share.share({
       title: 'Etiqueta de producto',
       text: barcode,
       files: [fileUri],
-      dialogTitle: 'Compartir etiqueta con TinyPrint'
+      dialogTitle: 'Compartir etiqueta con app de impresión'
     })
-    
-    // Share completado exitosamente
-    printToastMessage.value = `Etiqueta enviada a TinyPrint - ${barcode}`
+
+    printToastMessage.value = `Etiqueta lista para imprimir - ${barcode}`
     printToastColor.value = 'success'
     showPrintToast.value = true
   } catch (err) {
-    // Usuario canceló o error
     const errorMsg = err?.message || 'No se pudo generar la etiqueta.'
-    
-    // Solo mostrar toast si es un error real, no cancelación
     if (!errorMsg.includes('cancel') && !errorMsg.includes('dismiss')) {
       printError.value = errorMsg
       printToastMessage.value = errorMsg
@@ -917,6 +900,8 @@ const quickModalOpen = ref(false)
 const quickProduct = ref(null)
 const quickAdjust = ref('add') // 'add' or 'subtract'
 const quickCantidad = ref(1)
+const quickStockTarget = ref('stock')
+const quickArea = ref('OFICINA')
 
 const SCANNER_TIMEOUT_MS = 15000
 const DEBOUNCE_DELAY_MS = 800
@@ -965,6 +950,8 @@ const handleQuickScannedBarcode = async (decodedText) => {
   quickProduct.value = found
   quickCantidad.value = 1
   quickAdjust.value = 'add'
+  quickStockTarget.value = 'stock'
+  quickArea.value = areaFilter.value === 'TODAS' ? 'OFICINA' : normalizeAreaKey(areaFilter.value)
   quickModalOpen.value = true
 }
 
@@ -1051,7 +1038,11 @@ const applyQuickStockAdjustment = async () => {
     return
   }
 
-  const current = Number(quickProduct.value.stock || 0)
+  const isFraccionable = quickProduct.value.categoriaControl === 'FRACCIONABLE'
+  const target = isFraccionable ? quickStockTarget.value : 'stock'
+  const area = normalizeAreaKey(quickArea.value)
+  const stockPorArea = normalizeStockPorAreaLocal(quickProduct.value)
+  const current = Number(stockPorArea[area]?.[target] || 0)
   let next = current
   if (quickAdjust.value === 'add') {
     next = current + cantidad
@@ -1062,10 +1053,10 @@ const applyQuickStockAdjustment = async () => {
       return
     }
   }
+  stockPorArea[area][target] = next
 
   try {
-    await updateProduct(quickProduct.value.id, { stock: next })
-    // Registrar movimiento en la colección 'movimientos' para auditoría
+    await updateProduct(quickProduct.value.id, { stockPorArea, categoriaControlActual: quickProduct.value.categoriaControl }, { partial: true })
     try {
       const userJSON = localStorage.getItem('user')
       const usuario = userJSON ? JSON.parse(userJSON) : null
@@ -1076,18 +1067,18 @@ const applyQuickStockAdjustment = async () => {
         productoNombre: quickProduct.value.nombre,
         cantidad: quickAdjust.value === 'add' ? cantidad : -cantidad,
         tipo: quickAdjust.value === 'add' ? 'entrada' : 'salida',
-        motivo: 'Ajuste rapido',
+        motivo: target === 'stockEmpezado' ? 'Ajuste rapido de stock empezado' : 'Ajuste rapido de stock nuevo',
+        areaOrigen: area,
         usuarioId,
         usuarioNombre
       })
     } catch (mErr) {
-      // no bloquear la operación principal si falla el registro, pero loguear
       console.warn('No se pudo registrar movimiento:', mErr)
     }
     await refreshProductsAndLoanedStock()
     quickModalOpen.value = false
     quickProduct.value = null
-    await showSaveToastFn(`Stock actualizado: ${next}`)
+    await showSaveToastFn(`${target === 'stockEmpezado' ? 'Stock empezado' : 'Stock'} actualizado: ${next}`)
   } catch (err) {
     quickScannerError.value = err?.message || 'No se pudo actualizar el stock.'
   }
@@ -1101,8 +1092,20 @@ const showSaveToastFn = async (message) => {
 const normalizeProductPayload = () => {
   const nombre = formData.value.nombre?.trim() || ''
   const descripcion = formData.value.descripcion?.trim() || ''
-  const tipo = formData.value.tipo === 'HERRAMIENTA' ? 'HERRAMIENTA' : 'RECURSO'
-  const stock = Number(formData.value.stock)
+  let categoriaControl = String(formData.value.categoriaControl || 'UNIDAD').trim().toUpperCase()
+
+  if (!['UNIDAD', 'FRACCIONABLE', 'HERRAMIENTA'].includes(categoriaControl)) {
+    categoriaControl = 'UNIDAD'
+  }
+
+  // Compatibilidad interna: el usuario ya no captura tipo de producto.
+  const tipo = categoriaControl === 'HERRAMIENTA' ? 'HERRAMIENTA' : 'RECURSO'
+  const stockPorArea = normalizeStockPorAreaLocal({ ...formData.value, categoriaControl })
+  const stock = AREAS_TALLER.reduce((sum, area) => sum + Number(stockPorArea[area]?.stock || 0), 0)
+  const stockEmpezado = categoriaControl === 'FRACCIONABLE'
+    ? AREAS_TALLER.reduce((sum, area) => sum + Number(stockPorArea[area]?.stockEmpezado || 0), 0)
+    : 0
+  const generaAdeudo = formData.value.generaAdeudo !== false
   const precioRaw = formData.value.precio
   const precio = precioRaw === '' || precioRaw === null || precioRaw === undefined
     ? null
@@ -1112,9 +1115,18 @@ const normalizeProductPayload = () => {
     nombre,
     descripcion,
     tipo,
+    categoriaControl,
+    unidadStock: categoriaControl === 'FRACCIONABLE' ? 'ENVASE' : categoriaControl === 'HERRAMIENTA' ? 'UNIDAD' : 'PIEZA',
+    generaAdeudo,
+    stockMinimo: normalizeIntegerValue(formData.value.stockMinimo, 0),
+    stockPorArea,
     stock: Number.isFinite(stock) ? stock : 0,
+    stockEmpezado: categoriaControl === 'FRACCIONABLE'
+      ? (Number.isFinite(stockEmpezado) ? stockEmpezado : 0)
+      : 0,
     precio: Number.isFinite(precio) ? precio : null,
-    codigoBarras: (formData.value.codigoBarras || '').trim() || generateBarcode()
+    codigoBarras: (formData.value.codigoBarras || '').trim() || generateBarcode(),
+    activo: true
   }
 }
 
@@ -1125,6 +1137,8 @@ const saveProduct = async () => {
     touched.value = {
       nombre: true,
       stock: true,
+      stockEmpezado: true,
+      stockMinimo: true,
       precio: true
     }
 
@@ -1184,6 +1198,14 @@ const deleteConfirmButtons = [
   }
 ]
 
+
+watch(() => formData.value.categoriaControl, (categoria) => {
+  if (categoria !== 'FRACCIONABLE') {
+    formData.value.stockEmpezado = 0
+    AREAS_TALLER.forEach((area) => { formData.value.stockPorArea[area].stockEmpezado = 0 })
+  }
+})
+
 onMounted(async () => {
   await refreshProductsAndLoanedStock()
 })
@@ -1198,33 +1220,490 @@ onBeforeRouteLeave(() => {
 </script>
 
 <style scoped>
-.page-container {
-  padding: 1rem;
+.products-content {
+  --background: #f5f7fb;
 }
 
-.page-header {
+.page-container {
+  padding: 0.75rem;
+}
+
+.products-page {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1.5rem;
-  gap: 1rem;
+  flex-direction: column;
+  gap: 0.6rem;
 }
 
 .modules-trigger {
   --color: #ffffff;
 }
 
-.page-header h2 {
+.module-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
+  gap: 0.62rem;
+  padding: 0.82rem;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #ffffff 0%, #eef7ff 100%);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+}
+
+.hero-copy {
+  min-width: 0;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #2563eb;
+  margin-bottom: 0.18rem;
+}
+
+.hero-copy h2,
+.toolbar-copy h3,
+.quick-product-card h3 {
   margin: 0;
-  flex: 1;
+  color: #0f172a;
+  font-weight: 800;
 }
 
-.search-container {
-  margin-bottom: 1rem;
+.hero-copy h2 {
+  line-height: 1.18;
 }
 
-:global(.search-container ion-searchbar) {
-  padding: 0.5rem 0;
+.hero-copy p,
+.toolbar-copy p,
+.quick-product-card p {
+  margin: 0.18rem 0 0;
+  color: #64748b;
+  line-height: 1.28;
+}
+
+.hero-actions {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.34rem;
+  min-width: 126px;
+  flex-shrink: 0;
+}
+
+.hero-button {
+  min-height: 36px;
+  height: auto;
+  margin: 0;
+  font-weight: 700;
+  line-height: 1.12;
+  text-transform: none;
+  --border-radius: 12px;
+  --padding-top: 0.5rem;
+  --padding-bottom: 0.5rem;
+  --padding-start: 0.5rem;
+  --padding-end: 0.5rem;
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.38rem;
+}
+
+.overview-card {
+  padding: 0.48rem 0.52rem;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
+}
+
+.overview-card--primary {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.overview-label {
+  display: block;
+  color: #64748b;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+}
+
+.overview-card strong {
+  display: block;
+  margin-top: 0.12rem;
+  color: #0f172a;
+  line-height: 1;
+}
+
+.toolbar-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 15px;
+  padding: 0.58rem;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+}
+
+.toolbar-copy {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.toolbar-copy h3 {
+  margin: 0;
+}
+
+.toolbar-copy p {
+  margin: 0;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.catalog-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(8rem, 9.6rem);
+  align-items: center;
+  gap: 0.42rem;
+}
+
+.area-filter-panel {
+  display: grid;
+  grid-template-columns: minmax(8rem, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border-radius: 14px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+}
+
+.area-filter-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.08rem;
+  min-width: 0;
+}
+
+.area-filter-copy span {
+  color: #64748b;
+  font-weight: 850;
+  text-transform: uppercase;
+  letter-spacing: 0.018em;
+  line-height: 1.15;
+}
+
+.area-filter-copy strong {
+  color: #0f172a;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.area-filter-segment {
+  --background: #ffffff;
+  border: 1px solid #dbe3ee;
+  border-radius: 12px;
+  padding: 0.16rem;
+}
+
+.area-filter-segment ion-segment-button {
+  min-height: 34px;
+  --indicator-color: var(--ion-color-primary, #2563eb);
+  --color: #475569;
+  --color-checked: #ffffff;
+  font-weight: 800;
+  text-transform: none;
+}
+
+.product-searchbar {
+  padding: 0;
+  --background: #f8fafc;
+  --box-shadow: none;
+  --border-radius: 12px;
+  --color: #0f172a;
+  --placeholder-color: #94a3b8;
+  min-height: 38px;
+}
+
+.sort-control {
+  --background: #f8fafc;
+  --border-radius: 12px;
+  --min-height: 36px;
+  --padding-start: 0.48rem;
+  --padding-end: 0.28rem;
+  --inner-padding-end: 0;
+  border: 1px solid #edf2f7;
+  border-radius: 12px;
+  color: #0f172a;
+}
+
+.sort-control ion-label {
+  color: #64748b;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.sort-control ion-select {
+  min-height: 32px;
+  font-weight: 700;
+  --padding-start: 0.2rem;
+  --padding-end: 0.2rem;
+}
+
+.products-list {
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 0.54rem;
+  padding: 0 0.02rem 0.6rem;
+}
+
+.product-sliding {
+  border-radius: 14px;
+  overflow: hidden;
+  margin: 0;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.055);
+}
+
+.product-card {
+  --background: #ffffff;
+  --padding-start: 0;
+  --padding-end: 0;
+  --inner-padding-end: 0;
+  --min-height: 0;
+  --border-width: 0;
+}
+
+.product-card::part(native) {
+  border-radius: 14px;
+}
+
+.product-card-content {
+  width: 100%;
+  padding: 0.66rem;
+}
+
+.product-topline {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.28rem;
+  margin-bottom: 0.28rem;
+}
+
+.product-title-block {
+  min-width: 0;
+}
+
+.product-title-block h3 {
+  margin: 0;
+  color: #0f172a;
+  font-weight: 800;
+  line-height: 1.16;
+  word-break: break-word;
+}
+
+.product-title-block p {
+  margin: 0.14rem 0 0;
+  color: #64748b;
+  line-height: 1.22;
+}
+
+.product-chip-row,
+.compact-chip-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.18rem;
+}
+
+.product-chip-row {
+  max-width: 100%;
+  justify-content: flex-start;
+  margin-bottom: 0.38rem;
+}
+
+.ui-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 15px;
+  padding: 0.06rem 0.28rem;
+  border-radius: 999px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.ui-chip--muted {
+  color: #475569;
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+}
+
+.ui-chip--success {
+  color: #047857;
+  background: #ecfdf5;
+  border-color: #bbf7d0;
+}
+
+.ui-chip--danger {
+  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.ui-chip--warning {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.stock-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.28rem;
+}
+
+.stock-grid--fraccionable {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.stock-metric {
+  padding: 0.31rem 0.3rem;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #edf2f7;
+  min-width: 0;
+}
+
+.stock-metric--main {
+  background: #eef6ff;
+  border-color: #bfdbfe;
+}
+
+.stock-metric span {
+  display: block;
+  color: #64748b;
+  font-weight: 800;
+  line-height: 1.05;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.stock-metric strong {
+  display: block;
+  margin-top: 0.12rem;
+  color: #0f172a;
+  line-height: 1;
+}
+
+.empty-state,
+.loading-state,
+.modern-state {
+  text-align: center;
+  padding: 1.8rem 1rem;
+  color: #64748b;
+  background: #ffffff;
+  border: 1px dashed #cbd5e1;
+  border-radius: 18px;
+}
+
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.price,
+.stock-ok,
+.stock-danger {
+  font-weight: 700;
+}
+
+.stock-ok {
+  color: #047857;
+}
+
+.stock-danger {
+  color: #b91c1c;
+}
+
+.modal-form {
+  padding: 0.72rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+:global(ion-modal.product-modal),
+:global(ion-modal.quick-stock-modal) {
+  --width: min(760px, 94vw);
+  --height: min(86vh, 820px);
+  --border-radius: 20px;
+  --box-shadow: 0 24px 60px rgba(15, 23, 42, 0.3);
+  --backdrop-opacity: 0.42;
+}
+
+:global(ion-modal.product-modal::part(content)),
+:global(ion-modal.quick-stock-modal::part(content)) {
+  overflow: hidden;
+  background: #f5f7fb;
+}
+
+.modal-content {
+  --background: #f5f7fb;
+  --padding-bottom: 8px;
+}
+
+.form-card,
+.modern-form-card,
+.quick-product-card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 0.48rem;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+}
+
+.form-card ion-item,
+.modern-form-card ion-item {
+  --background: transparent;
+  --padding-start: 0;
+  --inner-padding-end: 0;
+  --min-height: 42px;
+}
+
+.form-card ion-label,
+.modern-form-card ion-label {
+  color: #334155;
+  font-weight: 700;
+}
+
+.print-barcode-button,
+.scan-barcode-button,
+.generate-barcode-button,
+.primary-action {
+  height: 35px;
+  margin: 0.35rem 0 0;
+  font-weight: 700;
+  text-transform: none;
+  --border-radius: 12px;
 }
 
 .barcode-field-container {
@@ -1240,123 +1719,44 @@ onBeforeRouteLeave(() => {
 .barcode-button-group {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.5rem;
-}
-
-.scan-barcode-button,
-.generate-barcode-button {
-  height: 40px;
-  font-weight: 600;
-}
-
-.empty-state,
-.loading-state {
-  text-align: center;
-  padding: 2rem 1rem;
-  color: #6b7280;
-}
-
-.loading-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1rem;
-}
-
-.price {
-  font-weight: 600;
-  color: #5f8fb8;
-}
-
-.stock-ok {
-  color: #047857;
-  font-weight: 600;
-}
-
-.stock-danger {
-  color: #b91c1c;
-  font-weight: 700;
-}
-
-.modal-form {
-  padding: 1rem 1rem 0.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-:global(ion-modal.product-modal) {
-  --width: min(760px, 92vw);
-  --height: min(82vh, 780px);
-  --border-radius: 18px;
-  --box-shadow: 0 24px 60px rgba(15, 23, 42, 0.3);
-  --backdrop-opacity: 0.42;
-}
-
-
-:global(ion-modal.product-modal::part(content)) {
-  overflow: hidden;
-}
-
-.modal-content {
-  --padding-bottom: 8px;
-}
-
-.form-card {
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  padding: 0.25rem 0.5rem;
-}
-
-.print-barcode-button {
-  margin-top: 0.5rem;
-  height: 42px;
-  font-weight: 600;
+  gap: 0.38rem;
 }
 
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
 .form-section {
-  padding-top: 0.75rem;
+  padding-top: 0.65rem;
 }
 
 .section-label {
-  font-weight: 600;
-  color: #1f2937;
+  font-weight: 800;
+  color: #0f172a;
   display: block;
-  margin-bottom: 0.5rem;
-  font-size: 0.875rem;
+  margin: 0 0 0.45rem;
 }
 
 .error-message {
   background-color: #fee2e2;
   color: #7f1d1d;
-  padding: 0.75rem;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
+  padding: 0.68rem;
+  border-radius: 12px;
   border-left: 4px solid #b45757;
 }
 
 .field-error {
-  margin: -0.5rem 0 0.25rem;
+  margin: -0.35rem 0 0.25rem;
   color: #b91c1c;
-  font-size: 0.8rem;
-  padding: 0 0.5rem;
+  padding: 0 0.35rem;
 }
 
 .field-hint {
-  margin: 0.35rem 0 0;
-  color: #6b7280;
-  font-size: 0.8rem;
-}
-
-.modal-footer-actions {
-  margin-top: 0.25rem;
+  margin: 0.32rem 0 0;
+  color: #64748b;
+  line-height: 1.35;
 }
 
 .modal-footer {
@@ -1368,34 +1768,1336 @@ onBeforeRouteLeave(() => {
   --background: #ffffff;
   --padding-start: 12px;
   --padding-end: 12px;
-  --padding-top: 10px;
-  --padding-bottom: 12px;
+  --padding-top: 8px;
+  --padding-bottom: 10px;
 }
 
 .modal-actions {
-  padding-top: 1rem;
+  padding-top: 0.75rem;
   border-top: 1px solid #e5e7eb;
-  margin-top: 1rem;
+  margin-top: 0.5rem;
+}
+
+.quick-stock-form {
+  padding-bottom: 1rem;
+}
+
+.quick-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.52rem;
+}
+
+.quick-product-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.42rem;
+}
+
+.quick-product-card h3 {
+}
+
+.compact-chip-row {
+  max-width: 45%;
+}
+
+.stock-grid--quick {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+
+
+/* Armonía de controles y acciones */
+.catalog-controls ion-item,
+.sort-control,
+.product-searchbar {
+  margin: 0;
+}
+
+.product-searchbar::part(container) {
+  min-height: 36px;
+}
+
+.product-searchbar::part(input) {
+}
+
+.hero-actions ion-button,
+.modal-actions ion-button,
+.primary-action,
+.print-barcode-button,
+.scan-barcode-button,
+.generate-barcode-button {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.12;
+}
+
+.product-sliding ion-item-option {
+  margin: 0;
+  font-weight: 700;
+}
+
+.product-sliding ion-item-option::part(native) {
+  padding-inline: 0.8rem;
+}
+
+.form-card + .form-card {
+  margin-top: 0.08rem;
+}
+
+.modern-form-card + .primary-action,
+.quick-panel .primary-action {
+  margin-top: 0.55rem;
+}
+
+.modal-actions ion-button,
+.modal-footer ion-button,
+.quick-panel > ion-button {
+  min-height: 38px;
+  height: auto;
+  margin: 0.12rem 0 0.18rem;
+  --border-radius: 12px;
+  --padding-top: 0.52rem;
+  --padding-bottom: 0.52rem;
+}
+
+/* Ajuste fino de armonía visual móvil */
+.module-hero,
+.toolbar-card,
+.overview-card,
+.product-sliding,
+.form-card,
+.modern-form-card,
+.quick-product-card {
+  box-sizing: border-box;
+}
+
+.product-card-content,
+.toolbar-card,
+.module-hero {
+  letter-spacing: 0;
+}
+
+.product-title-block p span {
+  vertical-align: middle;
+}
+
+.product-stock-grid {
+  align-items: stretch;
+}
+
+.product-stock-grid .stock-metric {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.product-card ion-label {
+  margin: 0;
+}
+
+.quick-product-card {
+  align-items: center;
+}
+
+.quick-product-card .stock-grid {
+  margin-top: 0.45rem;
+}
+
+ion-button {
+  text-transform: none;
+}
+
+@media (max-width: 720px) {
+  .overview-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .overview-card {
+    padding: 0.48rem 0.38rem;
+  }
+
+  .overview-label {
+  }
+
+  .overview-card strong {
+  }
+
+  .toolbar-card {
+    gap: 0.38rem;
+  }
+
+  .catalog-controls {
+    grid-template-columns: 1fr;
+    gap: 0.34rem;
+  }
+
+  .area-filter-panel {
+    grid-template-columns: 1fr;
+    gap: 0.38rem;
+  }
+
+  .area-filter-segment {
+    overflow-x: auto;
+  }
+
+  .product-topline,
+  .quick-product-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .product-chip-row,
+  .compact-chip-row {
+    max-width: 100%;
+    justify-content: flex-start;
+  }
+
+  .stock-grid,
+  .stock-grid--fraccionable,
+  .stock-grid--quick {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .stock-metric {
+    padding: 0.3rem 0.28rem;
+  }
+
+  .stock-metric span {
+  }
+
+  .stock-metric strong {
+  }
 }
 
 @media (max-width: 640px) {
-  .page-header {
+  .page-container {
+    padding: 0.62rem;
+  }
+
+  .module-hero {
     flex-direction: column;
-    align-items: stretch;
-    gap: 0.75rem;
+    padding: 0.68rem;
   }
 
-  .page-header ion-button {
+  .hero-actions {
+    min-width: 0;
     width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
   }
 
-  :global(ion-modal.product-modal) {
+  .hero-button {
+    width: 100%;
+    min-height: 36px;
+    height: auto;
+  }
+
+  :global(ion-modal.product-modal),
+  :global(ion-modal.quick-stock-modal) {
     --width: 96vw;
-    --height: 88vh;
+    --height: 90vh;
+  }
+
+  .modal-form {
+    padding: 0.7rem;
   }
 
   .form-grid {
     grid-template-columns: 1fr;
   }
+
+  .barcode-button-group {
+    grid-template-columns: 1fr;
+  }
 }
+
+@media (max-width: 430px) {
+  .overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .stock-grid,
+  .stock-grid--fraccionable,
+  .stock-grid--quick {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .product-card-content {
+    padding: 0.56rem;
+  }
+
+  .product-title-block h3 {
+  }
+
+  .ui-chip {
+    padding: 0.05rem 0.24rem;
+    min-height: 14px;
+  }
+
+  .toolbar-copy {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.05rem;
+  }
+
+  .toolbar-copy p {
+    white-space: normal;
+  }
+
+  .sort-control,
+  .product-searchbar {
+    min-height: 34px;
+  }
+
+  .sort-control ion-select {
+  }
+}
+
+/* Ajuste específico: botones con respiración dentro de cards/modales */
+.form-card {
+  padding-bottom: 0.64rem;
+}
+
+.barcode-button-group {
+  margin-top: 0.24rem;
+  margin-bottom: 0.1rem;
+}
+
+.scan-barcode-button,
+.generate-barcode-button,
+.print-barcode-button {
+  min-height: 38px;
+  height: auto;
+  margin: 0.42rem 0 0.12rem;
+  --padding-top: 0.48rem;
+  --padding-bottom: 0.48rem;
+  --padding-start: 0.5rem;
+  --padding-end: 0.5rem;
+}
+
+.modal-actions {
+  padding: 0.78rem 0.04rem 0.18rem;
+  margin-top: 0.62rem;
+}
+
+.primary-action {
+  min-height: 40px;
+  height: auto;
+  margin: 0.62rem 0 0.3rem;
+  --padding-top: 0.56rem;
+  --padding-bottom: 0.56rem;
+  --padding-start: 0.65rem;
+  --padding-end: 0.65rem;
+}
+
+.product-sliding {
+  margin-bottom: 0.08rem;
+}
+
+@media (max-width: 430px) {
+  .hero-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .barcode-button-group {
+    gap: 0.48rem;
+  }
+
+  .scan-barcode-button,
+  .generate-barcode-button,
+  .print-barcode-button,
+  .primary-action {
+    min-height: 39px;
+  }
+}
+
+/* Reestructura: stock por area */
+.area-stock-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+.area-stock-card {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 0.7rem;
+}
+.area-stock-card h4 {
+  margin: 0 0 0.5rem;
+  color: #111827;
+}
+@media (max-width: 720px) {
+  .catalog-controls { grid-template-columns: 1fr; }
+  .area-filter-panel { grid-template-columns: 1fr; }
+  .area-stock-grid { grid-template-columns: 1fr; }
+}
+
+
+/* Stepper táctil reutilizable para cantidades/stock */
+.field-stepper-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.52rem;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 0.42rem;
+  padding: 0.46rem 0.5rem;
+  border: 1px solid #e4ebf5;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.field-stepper-card > span {
+  min-width: 0;
+  color: #334155;
+  font-weight: 820;
+  line-height: 1.15;
+}
+
+.field-stepper-card--quick {
+  background: #f8fafc;
+}
+
+.compact-stepper {
+  display: grid;
+  grid-template-columns: 30px 48px 30px;
+  align-items: center;
+  justify-items: center;
+  justify-self: end;
+  gap: 0.24rem;
+}
+
+.stepper-btn {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  max-width: 30px;
+  max-height: 30px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+  --padding-start: 0;
+  --padding-end: 0;
+  --border-radius: 9px;
+}
+
+.stepper-btn::part(native) {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  max-width: 30px;
+  max-height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  margin: 0;
+  border: 1px solid #dbe3ee;
+  border-radius: 9px;
+  background: #ffffff;
+  box-sizing: border-box;
+}
+
+.stepper-btn ion-icon {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  padding: 0;
+}
+
+.stepper-input {
+  width: 48px;
+  height: 34px;
+  min-width: 48px;
+  min-height: 34px;
+  max-width: 48px;
+  max-height: 34px;
+  --background: #ffffff;
+  --padding-start: 0;
+  --padding-end: 0;
+  border: 1px solid #dbe3ee;
+  border-radius: 9px;
+  overflow: hidden;
+  text-align: center;
+  font-weight: 850;
+  box-sizing: border-box;
+}
+
+.stepper-input::part(native) {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  text-align: center;
+  line-height: 34px;
+}
+
+@media (max-width: 430px) {
+  .field-stepper-card {
+    padding: 0.42rem 0.44rem;
+  }
+
+  .compact-stepper {
+    grid-template-columns: 28px 44px 28px;
+    gap: 0.2rem;
+  }
+
+  .stepper-btn,
+  .stepper-btn::part(native) {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    min-height: 28px;
+    max-width: 28px;
+    max-height: 28px;
+  }
+
+  .stepper-input {
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+  }
+}
+
+
+/* Legibilidad móvil: textos claros y consistentes */
+.products-page,
+.modal-form,
+.product-card-content,
+.quick-product-card {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.product-title-block h3,
+.quick-product-card h3,
+.area-stock-card h4 {
+  line-height: 1.22;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.hero-copy p,
+.toolbar-copy p,
+.product-title-block p,
+.quick-product-card p,
+.empty-state p,
+.loading-state p,
+.field-hint {
+  line-height: 1.36;
+}
+
+.toolbar-copy h3,
+.section-label {
+  line-height: 1.24;
+}
+
+.ui-chip,
+.overview-label,
+.stock-metric span {
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+}
+
+.stock-metric strong,
+.overview-card strong {
+  line-height: 1.05;
+}
+
+.form-card ion-label,
+.modern-form-card ion-label,
+.field-stepper-card > span,
+.sort-control ion-label {
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.form-card ion-input,
+.form-card ion-select,
+.form-card ion-textarea,
+.modern-form-card ion-input,
+.modern-form-card ion-select,
+.modern-form-card ion-textarea,
+.product-searchbar::part(input) {
+  line-height: 1.35;
+}
+
+.product-card-content,
+.form-card,
+.quick-product-card {
+  padding: 0.68rem;
+}
+
+.stock-metric {
+  padding: 0.42rem 0.4rem;
+}
+
+.area-stock-card {
+  padding: 0.72rem;
+}
+
+.field-stepper-card {
+  gap: 0.62rem;
+}
+
+.compact-stepper {
+  align-items: center;
+  justify-items: center;
+}
+
+.stepper-btn ion-icon {
+  flex-shrink: 0;
+}
+
+@media (max-width: 430px) {
+  .page-container {
+    padding: 0.68rem;
+  }
+
+  .modal-form {
+    padding: 0.72rem;
+    gap: 0.62rem;
+  }
+
+  .module-hero p {
+  }
+
+  .stock-grid,
+  .stock-grid--fraccionable,
+  .stock-grid--quick {
+    gap: 0.34rem;
+  }
+
+  .toolbar-copy p {
+    white-space: normal;
+  }
+}
+
+@media (max-width: 640px) {
+  .products-page h2,
+  .toolbar-copy h3,
+  .product-title-block h3,
+  .quick-product-card h3 {
+    line-height: 1.25;
+  }
+
+  .hero-copy p,
+  .toolbar-copy p,
+  .product-title-block p,
+  .quick-product-card p,
+  .field-hint,
+  .empty-state p,
+  .loading-state p {
+    line-height: 1.45;
+  }
+
+  .ui-chip,
+  .overview-label,
+  .stock-metric span,
+  .field-stepper-card > span,
+  .sort-control ion-label,
+  .form-card ion-label,
+  .modern-form-card ion-label,
+  .section-label {
+    line-height: 1.3;
+  }
+
+  .stock-metric strong,
+  .overview-card strong {
+    line-height: 1.1;
+  }
+
+  .form-card ion-input,
+  .form-card ion-select,
+  .form-card ion-textarea,
+  .modern-form-card ion-input,
+  .modern-form-card ion-select,
+  .modern-form-card ion-textarea,
+  .product-searchbar::part(input) {
+    line-height: 1.4;
+  }
+
+  :global(ion-modal.product-modal) .modal-form,
+  :global(ion-modal.product-modal) .modal-form *,
+  :global(ion-modal.quick-stock-modal) .modal-form,
+  :global(ion-modal.quick-stock-modal) .modal-form * {
+    line-height: 1.4;
+  }
+
+  :global(ion-modal.product-modal) .modal-form h2,
+  :global(ion-modal.product-modal) .modal-form h3,
+  :global(ion-modal.quick-stock-modal) .modal-form h2,
+  :global(ion-modal.quick-stock-modal) .modal-form h3 {
+    line-height: 1.25;
+  }
+}
+
+/* Escala tipográfica final mobile-first: Productos */
+.products-page,
+.products-page ion-label,
+.modal-form,
+.modal-form ion-label,
+.product-card-content,
+.quick-product-card {
+  -webkit-font-smoothing: antialiased !important;
+  text-rendering: optimizeLegibility !important;
+}
+
+.products-page ion-title,
+:global(ion-modal.product-modal) ion-title,
+:global(ion-modal.quick-stock-modal) ion-title {
+  font-weight: 850 !important;
+  line-height: 1.2 !important;
+  letter-spacing: -0.01em !important;
+}
+
+.modules-trigger ion-icon,
+.close-modal-btn ion-icon,
+.hero-button ion-icon,
+.primary-action ion-icon,
+.stepper-btn ion-icon {
+  flex-shrink: 0 !important;
+}
+
+.hero-copy h2 {
+  line-height: 1.18 !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.018em !important;
+}
+
+.hero-copy p,
+.toolbar-copy p,
+.product-title-block p,
+.quick-product-card p,
+.empty-state p,
+.loading-state p,
+.field-hint,
+.field-error,
+.error-message {
+  line-height: 1.42 !important;
+  letter-spacing: 0 !important;
+}
+
+.eyebrow,
+.overview-label,
+.stock-metric span,
+.ui-chip,
+.sort-control ion-label {
+  line-height: 1.15 !important;
+  letter-spacing: 0.018em !important;
+}
+
+.toolbar-copy h3,
+.section-label,
+.area-stock-card h4,
+.quick-product-card h3 {
+  line-height: 1.24 !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.012em !important;
+}
+
+.product-title-block h3 {
+  line-height: 1.26 !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.014em !important;
+  overflow-wrap: anywhere !important;
+}
+
+.overview-card strong,
+.stock-metric strong {
+  line-height: 1.08 !important;
+  font-weight: 900 !important;
+}
+
+.form-card ion-label,
+.modern-form-card ion-label,
+.field-stepper-card > span,
+.sort-control ion-label,
+.area-stock-card label {
+  line-height: 1.28 !important;
+  font-weight: 800 !important;
+  letter-spacing: 0 !important;
+}
+
+.form-card ion-input,
+.form-card ion-select,
+.form-card ion-textarea,
+.modern-form-card ion-input,
+.modern-form-card ion-select,
+.modern-form-card ion-textarea,
+.sort-control ion-select,
+.product-searchbar::part(input) {
+  line-height: 1.42 !important;
+  font-weight: 650 !important;
+  letter-spacing: 0 !important;
+}
+
+.hero-button,
+.primary-action,
+.print-barcode-button,
+.scan-barcode-button,
+.generate-barcode-button,
+.close-modal-btn,
+.modal-actions ion-button,
+ion-button,
+.product-sliding ion-item-option {
+  line-height: 1.2 !important;
+  font-weight: 800 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+.field-stepper-card > span {
+  color: #334155 !important;
+}
+
+.stepper-input,
+.stepper-input::part(native) {
+  font-weight: 900 !important;
+  line-height: 1 !important;
+}
+
+.stepper-btn ion-icon {
+  width: 15px !important;
+  height: 15px !important;
+}
+
+@media (max-width: 430px) {
+  .hero-copy h2 {
+  }
+
+  .hero-copy p,
+  .toolbar-copy p,
+  .product-title-block p,
+  .quick-product-card p,
+  .empty-state p,
+  .loading-state p,
+  .field-hint,
+  .field-error {
+    line-height: 1.44 !important;
+  }
+
+  .toolbar-copy h3,
+  .section-label,
+  .area-stock-card h4,
+  .quick-product-card h3 {
+  }
+
+  .product-title-block h3 {
+  }
+
+  .form-card ion-label,
+  .modern-form-card ion-label,
+  .field-stepper-card > span,
+  .sort-control ion-label {
+  }
+
+  .form-card ion-input,
+  .form-card ion-select,
+  .form-card ion-textarea,
+  .modern-form-card ion-input,
+  .modern-form-card ion-select,
+  .modern-form-card ion-textarea,
+  .sort-control ion-select,
+  .product-searchbar::part(input) {
+  }
+}
+
+
+/* Ajuste final de fuentes en modales: legibilidad mobile consistente */
+:global(ion-modal.product-modal),
+:global(ion-modal.quick-stock-modal) {
+}
+
+:global(ion-modal.product-modal) ion-title,
+:global(ion-modal.quick-stock-modal) ion-title {
+  line-height: 1.18 !important;
+  font-weight: 880 !important;
+  letter-spacing: -0.012em !important;
+}
+
+:global(ion-modal.product-modal) .modal-form,
+:global(ion-modal.quick-stock-modal) .modal-form,
+:global(ion-modal.product-modal) ion-label,
+:global(ion-modal.quick-stock-modal) ion-label {
+  line-height: 1.36 !important;
+  -webkit-font-smoothing: antialiased !important;
+  text-rendering: optimizeLegibility !important;
+}
+
+:global(ion-modal.product-modal) h3,
+:global(ion-modal.product-modal) h4,
+:global(ion-modal.quick-stock-modal) h3,
+:global(ion-modal.quick-stock-modal) h4,
+:global(ion-modal.product-modal) .section-label,
+:global(ion-modal.quick-stock-modal) .section-label,
+:global(ion-modal.product-modal) .area-stock-card h4,
+:global(ion-modal.quick-stock-modal) .quick-product-card h3 {
+  line-height: 1.24 !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.014em !important;
+  overflow-wrap: anywhere !important;
+}
+
+:global(ion-modal.product-modal) p,
+:global(ion-modal.quick-stock-modal) p,
+:global(ion-modal.product-modal) .field-hint,
+:global(ion-modal.quick-stock-modal) .field-hint,
+:global(ion-modal.product-modal) .field-error,
+:global(ion-modal.quick-stock-modal) .field-error,
+:global(ion-modal.product-modal) .error-message,
+:global(ion-modal.quick-stock-modal) .error-message {
+  line-height: 1.42 !important;
+  font-weight: 650 !important;
+  letter-spacing: 0 !important;
+}
+
+:global(ion-modal.product-modal) ion-label,
+:global(ion-modal.quick-stock-modal) ion-label,
+:global(ion-modal.product-modal) .field-stepper-card > span,
+:global(ion-modal.quick-stock-modal) .field-stepper-card > span,
+:global(ion-modal.product-modal) .section-label,
+:global(ion-modal.quick-stock-modal) .section-label {
+  line-height: 1.28 !important;
+  font-weight: 820 !important;
+  letter-spacing: 0 !important;
+}
+
+:global(ion-modal.product-modal) ion-input,
+:global(ion-modal.product-modal) ion-select,
+:global(ion-modal.product-modal) ion-textarea,
+:global(ion-modal.quick-stock-modal) ion-input,
+:global(ion-modal.quick-stock-modal) ion-select,
+:global(ion-modal.quick-stock-modal) ion-textarea {
+  line-height: 1.42 !important;
+  font-weight: 650 !important;
+  letter-spacing: 0 !important;
+}
+
+:global(ion-modal.product-modal) .ui-chip,
+:global(ion-modal.quick-stock-modal) .ui-chip,
+:global(ion-modal.product-modal) .eyebrow,
+:global(ion-modal.quick-stock-modal) .eyebrow,
+:global(ion-modal.product-modal) .stock-metric span,
+:global(ion-modal.quick-stock-modal) .stock-metric span {
+  line-height: 1.14 !important;
+  letter-spacing: 0.012em !important;
+}
+
+:global(ion-modal.product-modal) .stock-metric strong,
+:global(ion-modal.quick-stock-modal) .stock-metric strong {
+  line-height: 1.08 !important;
+  font-weight: 900 !important;
+}
+
+:global(ion-modal.product-modal) .stepper-input,
+:global(ion-modal.product-modal) .stepper-input::part(native),
+:global(ion-modal.quick-stock-modal) .stepper-input,
+:global(ion-modal.quick-stock-modal) .stepper-input::part(native) {
+  line-height: 1 !important;
+  font-weight: 900 !important;
+}
+
+:global(ion-modal.product-modal) ion-button,
+:global(ion-modal.quick-stock-modal) ion-button,
+:global(ion-modal.product-modal) .close-modal-btn,
+:global(ion-modal.quick-stock-modal) .close-modal-btn,
+:global(ion-modal.product-modal) .primary-action,
+:global(ion-modal.quick-stock-modal) .primary-action,
+:global(ion-modal.product-modal) .scan-barcode-button,
+:global(ion-modal.product-modal) .generate-barcode-button,
+:global(ion-modal.product-modal) .print-barcode-button {
+  line-height: 1.22 !important;
+  font-weight: 820 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  white-space: normal !important;
+}
+
+:global(ion-modal.product-modal) ion-icon,
+:global(ion-modal.quick-stock-modal) ion-icon {
+  flex-shrink: 0 !important;
+}
+
+@media (max-width: 430px) {
+  :global(ion-modal.product-modal) .modal-form,
+  :global(ion-modal.quick-stock-modal) .modal-form {
+  }
+
+  :global(ion-modal.product-modal) h3,
+  :global(ion-modal.product-modal) h4,
+  :global(ion-modal.quick-stock-modal) h3,
+  :global(ion-modal.quick-stock-modal) h4,
+  :global(ion-modal.product-modal) .section-label,
+  :global(ion-modal.quick-stock-modal) .section-label,
+  :global(ion-modal.product-modal) .area-stock-card h4,
+  :global(ion-modal.quick-stock-modal) .quick-product-card h3 {
+  }
+
+  :global(ion-modal.product-modal) p,
+  :global(ion-modal.quick-stock-modal) p,
+  :global(ion-modal.product-modal) .field-hint,
+  :global(ion-modal.quick-stock-modal) .field-hint,
+  :global(ion-modal.product-modal) .field-error,
+  :global(ion-modal.quick-stock-modal) .field-error {
+    line-height: 1.44 !important;
+  }
+
+  :global(ion-modal.product-modal) ion-input,
+  :global(ion-modal.product-modal) ion-select,
+  :global(ion-modal.product-modal) ion-textarea,
+  :global(ion-modal.quick-stock-modal) ion-input,
+  :global(ion-modal.quick-stock-modal) ion-select,
+  :global(ion-modal.quick-stock-modal) ion-textarea {
+  }
+}
+
+
+
+
+/* Escala tipográfica estándar mobile - Productos
+   XS: chips/meta · SM: ayuda/footnotes · MD: lectura/input · LG: títulos internos · XL: encabezado */
+.products-content,
+:global(ion-modal.product-modal),
+:global(ion-modal.quick-stock-modal) {
+}
+
+.products-content,
+.products-content ion-content,
+.products-content ion-item,
+.products-content ion-label,
+:global(ion-modal.product-modal),
+:global(ion-modal.quick-stock-modal),
+:global(ion-modal.product-modal) ion-content,
+:global(ion-modal.quick-stock-modal) ion-content,
+:global(ion-modal.product-modal) ion-item,
+:global(ion-modal.quick-stock-modal) ion-item,
+:global(ion-modal.product-modal) ion-label,
+:global(ion-modal.quick-stock-modal) ion-label {
+  line-height: 1.38 !important;
+  text-rendering: optimizeLegibility !important;
+  -webkit-font-smoothing: antialiased !important;
+}
+
+.products-content ion-title,
+:global(ion-modal.product-modal) ion-title,
+:global(ion-modal.quick-stock-modal) ion-title {
+  line-height: 1.2 !important;
+  font-weight: 850 !important;
+  letter-spacing: -0.01em !important;
+}
+
+.hero-copy h2,
+.module-hero h2 {
+  line-height: 1.16 !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.02em !important;
+}
+
+.toolbar-copy h3,
+.section-label,
+.area-stock-card h4,
+.quick-product-card h3,
+.product-title-block h3,
+:global(ion-modal.product-modal) h3,
+:global(ion-modal.product-modal) h4,
+:global(ion-modal.quick-stock-modal) h3,
+:global(ion-modal.quick-stock-modal) h4 {
+  line-height: 1.24 !important;
+  font-weight: 850 !important;
+  letter-spacing: -0.012em !important;
+}
+
+.hero-copy p,
+.module-hero p,
+.toolbar-copy p,
+.product-title-block p,
+.quick-product-card p,
+.empty-state p,
+.loading-state p,
+.field-hint,
+.field-error,
+.card-footnote,
+:global(ion-modal.product-modal) p,
+:global(ion-modal.quick-stock-modal) p,
+:global(ion-modal.product-modal) .field-hint,
+:global(ion-modal.quick-stock-modal) .field-hint,
+:global(ion-modal.product-modal) .field-error,
+:global(ion-modal.quick-stock-modal) .field-error,
+:global(ion-modal.product-modal) .error-message,
+:global(ion-modal.quick-stock-modal) .error-message {
+  line-height: 1.42 !important;
+  font-weight: 600 !important;
+  letter-spacing: 0 !important;
+}
+
+.form-card ion-label,
+.modern-form-card ion-label,
+.field-stepper-card > span,
+.sort-control ion-label,
+:global(ion-modal.product-modal) ion-label,
+:global(ion-modal.quick-stock-modal) ion-label,
+:global(ion-modal.product-modal) .field-stepper-card > span,
+:global(ion-modal.quick-stock-modal) .field-stepper-card > span,
+:global(ion-modal.product-modal) .section-label,
+:global(ion-modal.quick-stock-modal) .section-label {
+  line-height: 1.28 !important;
+  font-weight: 780 !important;
+  letter-spacing: 0 !important;
+}
+
+.form-card ion-input,
+.form-card ion-select,
+.form-card ion-textarea,
+.modern-form-card ion-input,
+.modern-form-card ion-select,
+.modern-form-card ion-textarea,
+.sort-control ion-select,
+.product-searchbar::part(input),
+:global(ion-modal.product-modal) ion-input,
+:global(ion-modal.product-modal) ion-select,
+:global(ion-modal.product-modal) ion-textarea,
+:global(ion-modal.quick-stock-modal) ion-input,
+:global(ion-modal.quick-stock-modal) ion-select,
+:global(ion-modal.quick-stock-modal) ion-textarea {
+  line-height: 1.38 !important;
+  font-weight: 600 !important;
+  letter-spacing: 0 !important;
+}
+
+.ui-chip,
+.eyebrow,
+.overview-label,
+.stock-metric span,
+:global(ion-modal.product-modal) .ui-chip,
+:global(ion-modal.quick-stock-modal) .ui-chip,
+:global(ion-modal.product-modal) .eyebrow,
+:global(ion-modal.quick-stock-modal) .eyebrow,
+:global(ion-modal.product-modal) .stock-metric span,
+:global(ion-modal.quick-stock-modal) .stock-metric span {
+  line-height: 1.15 !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.012em !important;
+}
+
+.overview-card strong,
+.stock-metric strong,
+:global(ion-modal.product-modal) .stock-metric strong,
+:global(ion-modal.quick-stock-modal) .stock-metric strong {
+  line-height: 1.1 !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.01em !important;
+}
+
+.stepper-input,
+.stepper-input::part(native),
+:global(ion-modal.product-modal) .stepper-input,
+:global(ion-modal.product-modal) .stepper-input::part(native),
+:global(ion-modal.quick-stock-modal) .stepper-input,
+:global(ion-modal.quick-stock-modal) .stepper-input::part(native) {
+  line-height: 1 !important;
+  font-weight: 900 !important;
+}
+
+.hero-button,
+.primary-action,
+.print-barcode-button,
+.scan-barcode-button,
+.generate-barcode-button,
+.close-modal-btn,
+.modal-actions ion-button,
+.modal-footer ion-button,
+ion-button,
+.product-sliding ion-item-option,
+:global(ion-modal.product-modal) ion-button,
+:global(ion-modal.quick-stock-modal) ion-button {
+  line-height: 1.2 !important;
+  font-weight: 780 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+@media (max-width: 430px) {
+  .products-content,
+  :global(ion-modal.product-modal),
+  :global(ion-modal.quick-stock-modal) {
+  }
+}
+
+/* Escala tipográfica ÚNICA mobile-first - Productos
+   Máximo 4 tamaños reales:
+   XS = chips/metadatos · SM = textos secundarios · MD = lectura/campos/botones · LG = títulos/valores */
+.products-content,
+:global(ion-modal.product-modal),
+:global(ion-modal.quick-stock-modal) {
+  --text-xs: 0.72rem;
+  --text-sm: 0.82rem;
+  --text-md: 0.92rem;
+  --text-lg: 1.06rem;
+}
+
+.products-content,
+.products-content ion-content,
+.products-content ion-item,
+.products-content ion-label,
+:global(ion-modal.product-modal),
+:global(ion-modal.quick-stock-modal),
+:global(ion-modal.product-modal) ion-content,
+:global(ion-modal.quick-stock-modal) ion-content,
+:global(ion-modal.product-modal) ion-item,
+:global(ion-modal.quick-stock-modal) ion-item,
+:global(ion-modal.product-modal) ion-label,
+:global(ion-modal.quick-stock-modal) ion-label {
+  font-size: var(--text-md) !important;
+  line-height: 1.38 !important;
+  text-rendering: optimizeLegibility !important;
+  -webkit-font-smoothing: antialiased !important;
+}
+
+.products-content ion-title,
+:global(ion-modal.product-modal) ion-title,
+:global(ion-modal.quick-stock-modal) ion-title,
+.hero-copy h2,
+.module-hero h2,
+.toolbar-copy h3,
+.section-label,
+.area-stock-card h4,
+.quick-product-card h3,
+.product-title-block h3,
+:global(ion-modal.product-modal) h2,
+:global(ion-modal.product-modal) h3,
+:global(ion-modal.product-modal) h4,
+:global(ion-modal.quick-stock-modal) h2,
+:global(ion-modal.quick-stock-modal) h3,
+:global(ion-modal.quick-stock-modal) h4 {
+  font-size: var(--text-lg) !important;
+  line-height: 1.24 !important;
+  font-weight: 850 !important;
+  letter-spacing: -0.012em !important;
+  overflow-wrap: anywhere !important;
+}
+
+.hero-copy p,
+.module-hero p,
+.toolbar-copy p,
+.product-title-block p,
+.quick-product-card p,
+.empty-state p,
+.loading-state p,
+.field-hint,
+.field-error,
+.card-footnote,
+:global(ion-modal.product-modal) p,
+:global(ion-modal.quick-stock-modal) p,
+:global(ion-modal.product-modal) .field-hint,
+:global(ion-modal.quick-stock-modal) .field-hint,
+:global(ion-modal.product-modal) .field-error,
+:global(ion-modal.quick-stock-modal) .field-error,
+:global(ion-modal.product-modal) .error-message,
+:global(ion-modal.quick-stock-modal) .error-message {
+  font-size: var(--text-sm) !important;
+  line-height: 1.42 !important;
+  font-weight: 600 !important;
+  letter-spacing: 0 !important;
+}
+
+.form-card ion-label,
+.modern-form-card ion-label,
+.field-stepper-card > span,
+.sort-control ion-label,
+:global(ion-modal.product-modal) ion-label,
+:global(ion-modal.quick-stock-modal) ion-label,
+:global(ion-modal.product-modal) .field-stepper-card > span,
+:global(ion-modal.quick-stock-modal) .field-stepper-card > span,
+:global(ion-modal.product-modal) .section-label,
+:global(ion-modal.quick-stock-modal) .section-label,
+.hero-button,
+.primary-action,
+.print-barcode-button,
+.scan-barcode-button,
+.generate-barcode-button,
+.close-modal-btn,
+.modal-actions ion-button,
+.modal-footer ion-button,
+ion-button,
+.product-sliding ion-item-option,
+:global(ion-modal.product-modal) ion-button,
+:global(ion-modal.quick-stock-modal) ion-button {
+  font-size: var(--text-md) !important;
+  line-height: 1.28 !important;
+  font-weight: 780 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+.form-card ion-input,
+.form-card ion-select,
+.form-card ion-textarea,
+.modern-form-card ion-input,
+.modern-form-card ion-select,
+.modern-form-card ion-textarea,
+.sort-control ion-select,
+.product-searchbar::part(input),
+.stepper-input,
+.stepper-input::part(native),
+:global(ion-modal.product-modal) ion-input,
+:global(ion-modal.product-modal) ion-select,
+:global(ion-modal.product-modal) ion-textarea,
+:global(ion-modal.quick-stock-modal) ion-input,
+:global(ion-modal.quick-stock-modal) ion-select,
+:global(ion-modal.quick-stock-modal) ion-textarea,
+:global(ion-modal.product-modal) .stepper-input,
+:global(ion-modal.product-modal) .stepper-input::part(native),
+:global(ion-modal.quick-stock-modal) .stepper-input,
+:global(ion-modal.quick-stock-modal) .stepper-input::part(native) {
+  font-size: var(--text-md) !important;
+  line-height: 1.38 !important;
+  font-weight: 600 !important;
+  letter-spacing: 0 !important;
+}
+
+.ui-chip,
+.eyebrow,
+.overview-label,
+.stock-metric span,
+:global(ion-modal.product-modal) .ui-chip,
+:global(ion-modal.quick-stock-modal) .ui-chip,
+:global(ion-modal.product-modal) .eyebrow,
+:global(ion-modal.quick-stock-modal) .eyebrow,
+:global(ion-modal.product-modal) .stock-metric span,
+:global(ion-modal.quick-stock-modal) .stock-metric span {
+  font-size: var(--text-xs) !important;
+  line-height: 1.15 !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.012em !important;
+}
+
+.overview-card strong,
+.stock-metric strong,
+:global(ion-modal.product-modal) .stock-metric strong,
+:global(ion-modal.quick-stock-modal) .stock-metric strong {
+  font-size: var(--text-lg) !important;
+  line-height: 1.1 !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.01em !important;
+}
+
+@media (max-width: 430px) {
+  .products-content,
+  :global(ion-modal.product-modal),
+  :global(ion-modal.quick-stock-modal) {
+    --text-xs: 0.72rem;
+    --text-sm: 0.82rem;
+    --text-md: 0.92rem;
+    --text-lg: 1.06rem;
+  }
+}
+
 </style>

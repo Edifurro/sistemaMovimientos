@@ -8,12 +8,6 @@
           </ion-button>
         </ion-buttons>
         <ion-title>Inventario de Colaboradores</ion-title>
-        <ion-buttons slot="end">
-          <ion-button color="light" @click="openCreateModal">
-            <ion-icon slot="start" :icon="add"></ion-icon>
-            Nuevo
-          </ion-button>
-        </ion-buttons>
       </ion-toolbar>
     </ion-header>
 
@@ -53,40 +47,72 @@
       </ion-content>
     </ion-popover>
 
-    <ion-content>
+    <ion-content class="inventory-content">
       <ion-refresher slot="fixed" @ionRefresh="handleRefresh">
         <ion-refresher-content pulling-text="Desliza para actualizar" refreshing-spinner="circles"></ion-refresher-content>
       </ion-refresher>
 
-      <div class="page-container">
-        <div class="page-header">
-          <h2>Inventario de herramientas por colaborador</h2>
-        </div>
+      <div class="page-container inventory-page">
+        <section class="module-hero">
+          <div class="hero-copy">
+            <span class="eyebrow">Inventario</span>
+            <h2>Colaboradores</h2>
+            <p>Consulta, importa y actualiza herramientas asignadas por colaborador.</p>
+          </div>
+        </section>
 
-        <div class="summary-row">
-          <div class="summary-chip">Total: {{ totalCount }}</div>
-          <div class="summary-chip summary-chip--complete">Completo: {{ completeCount }}</div>
-          <div class="summary-chip summary-chip--incomplete">Incompleto: {{ incompleteCount }}</div>
-          <div class="summary-chip summary-chip--missing">Faltante: {{ missingCount }}</div>
-        </div>
+        <section class="overview-grid" aria-label="Resumen de inventario de colaboradores">
+          <article class="overview-card overview-card--primary">
+            <span class="overview-label">Total</span>
+            <strong>{{ totalCount }}</strong>
+          </article>
+          <article class="overview-card overview-card--success">
+            <span class="overview-label">Completo</span>
+            <strong>{{ completeCount }}</strong>
+          </article>
+          <article class="overview-card overview-card--warning">
+            <span class="overview-label">Incompleto</span>
+            <strong>{{ incompleteCount }}</strong>
+          </article>
+          <article class="overview-card overview-card--danger">
+            <span class="overview-label">Faltante</span>
+            <strong>{{ missingCount }}</strong>
+          </article>
+        </section>
 
-        <div class="controls">
-          <ion-searchbar
-            v-model="searchText"
-            placeholder="Buscar por colaborador, herramienta o codigo"
-            :debounce="200"
-          ></ion-searchbar>
-          <ion-select v-model="colaboradorFilter" placeholder="Filtrar por colaborador">
-            <ion-select-option value="">Todos los colaboradores</ion-select-option>
-            <ion-select-option
-              v-for="colaborador in collaboratorFilterOptions"
-              :key="colaborador.id"
-              :value="colaborador.id"
-            >
-              {{ colaborador.nombre }}
-            </ion-select-option>
-          </ion-select>
-          <ion-segment v-model="estadoFilter">
+        <section class="toolbar-card">
+          <div class="toolbar-copy">
+            <h3>Herramientas</h3>
+            <p>{{ filteredInventario.length }} registros</p>
+          </div>
+
+          <div class="inventory-controls">
+            <ion-searchbar
+              v-model="searchText"
+              placeholder="Buscar colaborador, herramienta o código"
+              :debounce="200"
+              show-clear-button="focus"
+              inputmode="search"
+              enterkeyhint="search"
+              class="inventory-searchbar"
+            ></ion-searchbar>
+
+            <ion-item lines="none" class="filter-control collaborator-control">
+              <ion-label>Colaborador</ion-label>
+              <ion-select v-model="colaboradorFilter" placeholder="Todos" interface="popover">
+                <ion-select-option value="">Todos</ion-select-option>
+                <ion-select-option
+                  v-for="colaborador in collaboratorFilterOptions"
+                  :key="colaborador.id"
+                  :value="colaborador.id"
+                >
+                  {{ colaborador.nombre }}
+                </ion-select-option>
+              </ion-select>
+            </ion-item>
+          </div>
+
+          <ion-segment v-model="estadoFilter" class="modern-segment" scrollable>
             <ion-segment-button value="todos">
               <ion-label>Todos</ion-label>
             </ion-segment-button>
@@ -100,44 +126,80 @@
               <ion-label>Faltante</ion-label>
             </ion-segment-button>
           </ion-segment>
-          <div class="action-row">
-            <ion-button expand="block" @click="openCreateModal">Nueva herramienta</ion-button>
-            <ion-button expand="block" fill="outline" @click="triggerImportFile">Importar Excel</ion-button>
-            <ion-button expand="block" fill="outline" @click="exportToExcel">Exportar Excel</ion-button>
-            <ion-button expand="block" fill="outline" @click="openBarcodeScanner">
+
+          <div class="action-grid">
+            <ion-button expand="block" color="success" @click="openCreateModal">
+              <ion-icon slot="start" :icon="add"></ion-icon>
+              Nueva herramienta
+            </ion-button>
+            <ion-button expand="block" fill="outline" color="primary" @click="openBarcodeScanner">
               <ion-icon slot="start" :icon="camera"></ion-icon>
               Escanear
             </ion-button>
-            <ion-button expand="block" fill="clear" color="tertiary" @click="startConteoForSelectedCollaborator" :disabled="!colaboradorFilter">
+            <ion-button
+              v-show="false"
+              expand="block"
+              fill="outline"
+              class="hidden-import-action"
+              aria-hidden="true"
+              tabindex="-1"
+              @click="triggerImportFile"
+            >
+              Importar Excel
+            </ion-button>
+            <ion-button expand="block" fill="outline" @click="exportToExcel">Exportar Excel</ion-button>
+            <ion-button expand="block" fill="outline" color="tertiary" @click="startConteoForSelectedCollaborator" :disabled="!colaboradorFilter">
               <ion-icon slot="start" :icon="people"></ion-icon>
               Iniciar conteo
             </ion-button>
           </div>
-        </div>
+        </section>
 
         <div v-if="composableError" class="error-message">{{ composableError }}</div>
+        <div v-if="scannerError" class="error-message error-message--warning">{{ scannerError }}</div>
 
-        <div v-if="loading && !filteredInventario.length" class="loading-state">
+        <div v-if="loading && !filteredInventario.length" class="loading-state modern-state">
           <ion-spinner name="circles"></ion-spinner>
           <p>Cargando inventario...</p>
         </div>
 
-        <ion-list v-else-if="filteredInventario.length > 0">
-          <ion-item-sliding v-for="item in filteredInventario" :key="item.id">
-            <ion-item button @click="openEditModal(item)" :class="['inventory-row', getEstadoClass(item.estado)]">
-              <ion-label>
-                <h2>{{ item.herramienta }}</h2>
-                <p>Colaborador: {{ item.colaboradorNombre || 'Sin colaborador' }}</p>
-                <p>Marca: {{ item.marca || 'Sin marca' }}</p>
-                <p>Codigo empleado: {{ item.codigoEmpleado || 'Sin codigo' }}</p>
-                <p>Barcode: {{ item.barcode }}</p>
-                <p>Cantidad: {{ item.cantidad || 1 }}</p>
-                <p>Entrega: {{ formatDate(item.fechaEntrega) }}</p>
-                <p class="descripcion-preview">{{ item.comentario || 'Sin comentario' }}</p>
-              </ion-label>
-              <ion-badge slot="end" :class="getEstadoBadgeClass(item.estado)">
-                {{ getEstadoLabel(item.estado) }}
-              </ion-badge>
+        <ion-list v-else-if="filteredInventario.length > 0" lines="none" class="inventory-list">
+          <ion-item-sliding v-for="item in filteredInventario" :key="item.id" class="inventory-sliding">
+            <ion-item button detail="false" lines="none" @click="openEditModal(item)" :class="['inventory-card', getEstadoClass(item.estado)]">
+              <div class="inventory-card-content">
+                <div class="inventory-topline">
+                  <div class="inventory-title-block">
+                    <h3>{{ item.herramienta }}</h3>
+                    <p>{{ item.colaboradorNombre || 'Sin colaborador' }}</p>
+                  </div>
+                  <span class="ui-chip" :class="getEstadoBadgeClass(item.estado)">
+                    {{ getEstadoLabel(item.estado) }}
+                  </span>
+                </div>
+
+                <div class="inventory-chip-row">
+                  <span class="ui-chip ui-chip--muted">{{ item.marca || 'Sin marca' }}</span>
+                  <span class="ui-chip ui-chip--muted">{{ item.codigoEmpleado || 'Sin código empleado' }}</span>
+                  <span v-if="item.descripcion" class="ui-chip ui-chip--muted">{{ item.descripcion }}</span>
+                </div>
+
+                <div class="inventory-metric-grid">
+                  <div class="inventory-metric inventory-metric--main">
+                    <span>Cantidad</span>
+                    <strong>{{ item.cantidad || 1 }}</strong>
+                  </div>
+                  <div class="inventory-metric">
+                    <span>Entrega</span>
+                    <strong>{{ formatDate(item.fechaEntrega) }}</strong>
+                  </div>
+                  <div class="inventory-metric">
+                    <span>Código</span>
+                    <strong>{{ item.barcode || '—' }}</strong>
+                  </div>
+                </div>
+
+                <p v-if="item.comentario" class="card-footnote">{{ item.comentario }}</p>
+              </div>
             </ion-item>
             <ion-item-options side="end">
               <ion-item-option color="primary" @click="openEditModal(item)">
@@ -147,7 +209,7 @@
           </ion-item-sliding>
         </ion-list>
 
-        <div v-else class="empty-state">
+        <div v-else class="empty-state modern-state">
           <p>No hay registros para el filtro actual.</p>
           <ion-button fill="outline" @click="openCreateModal">Crear primer registro</ion-button>
         </div>
@@ -175,8 +237,6 @@
             <ion-button v-if="!isEditing" :disabled="isGeneratingBarcode" @click="regenerateBarcode">
               <ion-icon slot="icon-only" :icon="refresh"></ion-icon>
             </ion-button>
-          </ion-buttons>
-          <ion-buttons slot="end">
             <ion-button @click="closeModal" class="close-modal-btn">
               <ion-icon slot="start" :icon="closeOutline"></ion-icon>
               Cerrar
@@ -187,79 +247,82 @@
       <ion-content class="modal-content">
         <div class="modal-form">
           <div class="form-card">
-            <ion-item>
+            <span class="section-label">Asignación</span>
+            <ion-item lines="none">
               <ion-label position="stacked">Colaborador</ion-label>
-              <ion-select v-model="formData.colaboradorId" placeholder="Selecciona colaborador">
+              <ion-select v-model="formData.colaboradorId" placeholder="Selecciona colaborador" interface="popover">
                 <ion-select-option value="">Selecciona colaborador</ion-select-option>
                 <ion-select-option
                   v-for="colaborador in colaboradores"
                   :key="colaborador.id"
                   :value="colaborador.id"
                 >
-                  {{ colaborador.nombre }} · {{ colaborador.codigoEmpleado || 'Sin codigo' }}
+                  {{ colaborador.nombre }} · {{ colaborador.codigoEmpleado || 'Sin código' }}
                 </ion-select-option>
               </ion-select>
             </ion-item>
 
-            <ion-item>
-              <ion-label position="stacked">Codigo de barras</ion-label>
+            <ion-item lines="none">
+              <ion-label position="stacked">Código de barras</ion-label>
               <ion-input v-model="formData.barcode" type="text" :legacy="true" readonly></ion-input>
             </ion-item>
-            <p v-if="isGeneratingBarcode" class="field-hint">Generando codigo unico...</p>
-            <p v-else class="field-hint">El codigo se genera automaticamente y queda guardado.</p>
+            <p v-if="isGeneratingBarcode" class="field-hint">Generando código único...</p>
+            <p v-else class="field-hint">El código se genera automáticamente y queda guardado.</p>
 
-            <!-- Imagen del código ocultada en modal; solo se muestra el número en el campo -->
             <ion-button
               v-if="isEditing"
               expand="block"
               fill="outline"
               class="print-barcode-button"
               :disabled="isPrinting"
-              color="primary" 
-              @click="shareLabelToTinyPrint"
+              color="primary"
+              @click="shareLabelToPrinterApp"
             >
               <ion-icon slot="start" :icon="print"></ion-icon>
-              {{ isPrinting ? 'GENERANDO ETIQUETA...' : 'IMPRIMIR EN TINYPRINT' }}
+              {{ isPrinting ? 'Generando etiqueta...' : 'Imprimir / compartir etiqueta' }}
             </ion-button>
             <p v-if="printError" class="field-error">{{ printError }}</p>
           </div>
 
           <div class="form-card">
-            <ion-item>
-              <ion-label position="stacked">Herramienta</ion-label>
-              <ion-input v-model="formData.herramienta" type="text" :legacy="true"></ion-input>
-            </ion-item>
+            <span class="section-label">Datos de herramienta</span>
+            <div class="form-grid">
+              <ion-item lines="none">
+                <ion-label position="stacked">Herramienta</ion-label>
+                <ion-input v-model="formData.herramienta" type="text" :legacy="true"></ion-input>
+              </ion-item>
 
-            <ion-item>
-              <ion-label position="stacked">Marca</ion-label>
-              <ion-input v-model="formData.marca" type="text" :legacy="true"></ion-input>
-            </ion-item>
+              <ion-item lines="none">
+                <ion-label position="stacked">Marca</ion-label>
+                <ion-input v-model="formData.marca" type="text" :legacy="true"></ion-input>
+              </ion-item>
 
-            <ion-item>
-              <ion-label position="stacked">Cantidad</ion-label>
-              <ion-input v-model="formData.cantidad" type="number" min="1" step="1" :legacy="true"></ion-input>
-            </ion-item>
+              <ion-item lines="none">
+                <ion-label position="stacked">Cantidad</ion-label>
+                <ion-input v-model="formData.cantidad" type="number" min="1" step="1" :legacy="true"></ion-input>
+              </ion-item>
 
-            <ion-item>
-              <ion-label position="stacked">Descripcion</ion-label>
-              <ion-input v-model="formData.descripcion" type="text" :legacy="true"></ion-input>
-            </ion-item>
+              <ion-item lines="none">
+                <ion-label position="stacked">Estado</ion-label>
+                <ion-select v-model="formData.estado" placeholder="Selecciona estado" interface="popover">
+                  <ion-select-option value="completo">Completo</ion-select-option>
+                  <ion-select-option value="incompleto">Incompleto</ion-select-option>
+                  <ion-select-option value="faltante">Faltante</ion-select-option>
+                </ion-select>
+              </ion-item>
 
-            <ion-item>
-              <ion-label position="stacked">Estado</ion-label>
-              <ion-select v-model="formData.estado" placeholder="Selecciona estado">
-                <ion-select-option value="completo">Completo</ion-select-option>
-                <ion-select-option value="incompleto">Incompleto</ion-select-option>
-                <ion-select-option value="faltante">Faltante</ion-select-option>
-              </ion-select>
-            </ion-item>
+              <ion-item lines="none">
+                <ion-label position="stacked">Fecha de entrega</ion-label>
+                <ion-input v-model="formData.fechaEntrega" type="date" :legacy="true"></ion-input>
+              </ion-item>
 
-            <ion-item>
-              <ion-label position="stacked">Fecha de entrega</ion-label>
-              <ion-input v-model="formData.fechaEntrega" type="date" :legacy="true"></ion-input>
-            </ion-item>
+              <ion-item lines="none">
+                <ion-label position="stacked">Descripción</ion-label>
+                <ion-input v-model="formData.descripcion" type="text" :legacy="true"></ion-input>
+              </ion-item>
+            </div>
 
-            <ion-item>
+            <ion-item lines="none" class="textarea-item">
               <ion-label position="stacked">Comentario</ion-label>
               <ion-textarea v-model="formData.comentario" rows="3" :legacy="true"></ion-textarea>
             </ion-item>
@@ -280,34 +343,55 @@
       </ion-footer>
     </ion-modal>
 
-    <ion-modal :is-open="showImportOptionsModal" @didDismiss="showImportOptionsModal = false">
+    <ion-modal :is-open="showImportOptionsModal" css-class="inventario-modal inventario-import-modal" @didDismiss="showImportOptionsModal = false">
       <ion-header>
         <ion-toolbar color="primary">
           <ion-title>Opciones de importación</ion-title>
+          <ion-buttons slot="end">
+            <ion-button @click="cancelImport" class="close-modal-btn" :disabled="importInProgress">
+              <ion-icon slot="start" :icon="closeOutline"></ion-icon>
+              Cerrar
+            </ion-button>
+          </ion-buttons>
         </ion-toolbar>
       </ion-header>
-      <ion-content>
-        <div class="modal-form">
-          <p>Filas detectadas: <strong>{{ importRowsCount }}</strong></p>
-          <p>Codigos únicos: <strong>{{ importUniqueBarcodesCount }}</strong></p>
+      <ion-content class="modal-content">
+        <div class="modal-form import-form">
+          <div class="form-card import-summary-card">
+            <span class="section-label">Resumen</span>
+            <div class="inventory-metric-grid">
+              <div class="inventory-metric inventory-metric--main">
+                <span>Filas</span>
+                <strong>{{ importRowsCount }}</strong>
+              </div>
+              <div class="inventory-metric">
+                <span>Códigos únicos</span>
+                <strong>{{ importUniqueBarcodesCount }}</strong>
+              </div>
+            </div>
+          </div>
 
-          <ion-item>
-            <ion-label position="stacked">Asignar a colaborador (opcional)</ion-label>
-            <ion-select v-model="importAssignCollaborator" placeholder="No asignar">
-              <ion-select-option value="">No asignar</ion-select-option>
-              <ion-select-option v-for="c in collaboratorFilterOptions" :key="c.id" :value="c.id">{{ c.nombre }}</ion-select-option>
-            </ion-select>
-          </ion-item>
+          <div class="form-card">
+            <span class="section-label">Asignación opcional</span>
+            <ion-item lines="none">
+              <ion-label position="stacked">Asignar a colaborador</ion-label>
+              <ion-select v-model="importAssignCollaborator" placeholder="No asignar" interface="popover">
+                <ion-select-option value="">No asignar</ion-select-option>
+                <ion-select-option v-for="c in collaboratorFilterOptions" :key="c.id" :value="c.id">{{ c.nombre }}</ion-select-option>
+              </ion-select>
+            </ion-item>
 
-          <ion-item>
-            <ion-label>Forzar asignación a todos</ion-label>
-            <ion-toggle slot="end" v-model="importForceAssign"></ion-toggle>
-          </ion-item>
+            <ion-item lines="none" class="toggle-item">
+              <ion-label>Forzar asignación a todos</ion-label>
+              <ion-toggle slot="end" v-model="importForceAssign"></ion-toggle>
+            </ion-item>
+          </div>
 
-          <div v-if="importRowsPreview.length" style="margin-top:0.75rem">
-            <h3>Preview (primeras {{ importRowsPreview.length }})</h3>
-            <ion-list>
-              <ion-item v-for="(r, idx) in importRowsPreview" :key="idx">
+          <div v-if="importRowsPreview.length" class="form-card preview-card">
+            <span class="section-label">Preview</span>
+            <p class="field-hint">Primeras {{ importRowsPreview.length }} filas detectadas.</p>
+            <ion-list lines="none" class="preview-list">
+              <ion-item v-for="(r, idx) in importRowsPreview" :key="idx" lines="none" class="preview-item">
                 <ion-label>
                   <h3>{{ r.herramienta || '—' }}</h3>
                   <p>Barcode: {{ r.barcode || '—' }}</p>
@@ -316,14 +400,16 @@
               </ion-item>
             </ion-list>
           </div>
-          <div v-if="importInProgress" style="margin-top:0.75rem">
-            <p>Importando: <strong>{{ importProcessed }}</strong> / <strong>{{ importRowsCount }}</strong> (<strong>{{ Math.round(importProgress * 100) }}%</strong>)</p>
+
+          <div v-if="importInProgress" class="form-card progress-card">
+            <span class="section-label">Importando</span>
+            <p><strong>{{ importProcessed }}</strong> / <strong>{{ importRowsCount }}</strong> (<strong>{{ Math.round(importProgress * 100) }}%</strong>)</p>
             <ion-progress-bar :value="importProgress"></ion-progress-bar>
-            <p style="margin-top:0.5rem">Creados: {{ importCreated }} · Actualizados: {{ importUpdated }} · Omitidos: {{ importSkipped }}</p>
+            <p class="field-hint">Creados: {{ importCreated }} · Actualizados: {{ importUpdated }} · Omitidos: {{ importSkipped }}</p>
           </div>
         </div>
       </ion-content>
-      <ion-footer>
+      <ion-footer class="modal-footer">
         <ion-toolbar>
           <ion-buttons slot="start">
             <ion-button color="medium" @click="cancelImport" :disabled="importInProgress">Cancelar</ion-button>
@@ -348,6 +434,7 @@
     <ion-alert :is-open="showImportResultAlert" header="Resultado de importación" :message="`Nuevos: ${importResult.created}, Actualizados: ${importResult.updated}, Omitidos: ${importResult.skipped}`" :buttons="importResultButtons"></ion-alert>
   </ion-page>
 </template>
+
 
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
@@ -581,11 +668,50 @@ const showFeedback = async (message, color = 'success') => {
 const isPrinting = ref(false)
 const printError = ref('')
 
-const LABEL_WIDTH_PX = 320
-const LABEL_HEIGHT_PX = 160
-const LABEL_RENDER_SCALE = 3
+const LABEL_WIDTH_MM = 50.8
+const LABEL_HEIGHT_MM = 25.4
+const LABEL_WIDTH_PX = 406
+const LABEL_HEIGHT_PX = 203
+const LABEL_RENDER_SCALE = 2
 
-const buildLabelDataUrl = (code) => {
+const safeLabelFileName = (code) => String(code || 'etiqueta')
+  .trim()
+  .replace(/[^a-zA-Z0-9_-]+/g, '-')
+  .replace(/^-+|-+$/g, '') || 'etiqueta'
+
+const mmToPdfPoints = (mm) => (Number(mm || 0) / 25.4) * 72
+
+const buildPdfBase64WithImage = (jpegBase64, imageWidth, imageHeight) => {
+  const pageWidth = mmToPdfPoints(LABEL_WIDTH_MM)
+  const pageHeight = mmToPdfPoints(LABEL_HEIGHT_MM)
+  const imageBinary = atob(jpegBase64)
+  const content = `q\n${pageWidth.toFixed(2)} 0 0 ${pageHeight.toFixed(2)} 0 0 cm\n/Im1 Do\nQ\n`
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth.toFixed(2)} ${pageHeight.toFixed(2)}] /Resources << /XObject << /Im1 5 0 R >> >> /Contents 4 0 R >>`,
+    `<< /Length ${content.length} >>\nstream\n${content}endstream`,
+    `<< /Type /XObject /Subtype /Image /Width ${imageWidth} /Height ${imageHeight} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imageBinary.length} >>\nstream\n${imageBinary}\nendstream`
+  ]
+
+  let pdf = '%PDF-1.4\n%\xFF\xFF\xFF\xFF\n'
+  const offsets = [0]
+  objects.forEach((object, index) => {
+    offsets[index + 1] = pdf.length
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`
+  })
+
+  const xrefOffset = pdf.length
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`
+  for (let i = 1; i <= objects.length; i += 1) {
+    pdf += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`
+  }
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`
+
+  return btoa(pdf)
+}
+
+const buildLabelDataUrl = (code, mimeType = 'image/png') => {
   const canvas = document.createElement('canvas')
   canvas.width = LABEL_WIDTH_PX * LABEL_RENDER_SCALE
   canvas.height = LABEL_HEIGHT_PX * LABEL_RENDER_SCALE
@@ -596,8 +722,8 @@ const buildLabelDataUrl = (code) => {
   ctx.fillRect(0, 0, canvas.width, canvas.height)
 
   const barcodeCanvas = document.createElement('canvas')
-  barcodeCanvas.width = LABEL_WIDTH_PX * LABEL_RENDER_SCALE
-  barcodeCanvas.height = 104 * LABEL_RENDER_SCALE
+  barcodeCanvas.width = canvas.width
+  barcodeCanvas.height = Math.round(canvas.height * 0.72)
   const barcodeCtx = barcodeCanvas.getContext('2d')
   if (!barcodeCtx) throw new Error('No se pudo crear el lienzo del codigo de barras.')
 
@@ -607,27 +733,19 @@ const buildLabelDataUrl = (code) => {
   JsBarcode(barcodeCanvas, code, {
     format: 'CODE128',
     displayValue: false,
-    marginLeft: 34,
-    marginRight: 34,
+    marginLeft: 24,
+    marginRight: 24,
     marginTop: 8,
     marginBottom: 8,
-    height: 86 * LABEL_RENDER_SCALE,
-    width: 2.4,
+    height: Math.round(barcodeCanvas.height * 0.82),
+    width: 2.2,
     lineColor: '#000000',
     background: '#ffffff'
   })
 
   ctx.imageSmoothingEnabled = false
-  // Añadir 1.5 cm extra de margen superior (previos 1.0cm + 0.5cm adicional)
-  // y 1.0 cm extra de margen derecho (previos 0.5cm + 0.5cm adicional) para ajustar la etiqueta física.
-  const extraTopMarginCm = 1.5
-  const extraRightMarginCm = 0.8
-  const pxPerCm = 96 / 2.54
-  const extraTopMarginPx = Math.round(extraTopMarginCm * pxPerCm * LABEL_RENDER_SCALE)
-  const extraRightMarginPx = Math.round(extraRightMarginCm * pxPerCm * LABEL_RENDER_SCALE)
-
-  const destWidth = Math.max(0, canvas.width - extraRightMarginPx)
-
+  const drawHeight = Math.round(canvas.height * 0.72)
+  const drawTop = Math.round((canvas.height - drawHeight) / 2)
   ctx.drawImage(
     barcodeCanvas,
     0,
@@ -635,12 +753,10 @@ const buildLabelDataUrl = (code) => {
     barcodeCanvas.width,
     barcodeCanvas.height,
     0,
-    8 * LABEL_RENDER_SCALE + extraTopMarginPx,
-    destWidth,
-    104 * LABEL_RENDER_SCALE
+    drawTop,
+    canvas.width,
+    drawHeight
   )
-
-  // No dibujar el texto del código debajo del barcode (sólo la imagen)
 
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
   const data = imageData.data
@@ -654,18 +770,24 @@ const buildLabelDataUrl = (code) => {
   }
   ctx.putImageData(imageData, 0, 0)
 
-  return canvas.toDataURL('image/png')
+  return canvas.toDataURL(mimeType, 1)
 }
 
-const buildLabelFileUri = async (code) => {
-  const dataUrl = buildLabelDataUrl(code)
-  const base64Data = dataUrl.split(',')[1]
-  if (!base64Data) throw new Error('No se pudo generar la imagen de impresión.')
+const buildLabelPdfFileUri = async (code) => {
+  const jpegDataUrl = buildLabelDataUrl(code, 'image/jpeg')
+  const jpegBase64 = jpegDataUrl.split(',')[1]
+  if (!jpegBase64) throw new Error('No se pudo generar el PDF de impresión.')
 
-  const fileName = `tinyprint-${code}.png`
+  const pdfBase64 = buildPdfBase64WithImage(
+    jpegBase64,
+    LABEL_WIDTH_PX * LABEL_RENDER_SCALE,
+    LABEL_HEIGHT_PX * LABEL_RENDER_SCALE
+  )
+
+  const fileName = `etiqueta-${safeLabelFileName(code)}-2x1.pdf`
   const result = await Filesystem.writeFile({
     path: fileName,
-    data: base64Data,
+    data: pdfBase64,
     directory: Directory.Cache,
     recursive: true
   })
@@ -673,8 +795,9 @@ const buildLabelFileUri = async (code) => {
   return result.uri
 }
 
-const shareLabelToTinyPrint = async () => {
+const shareLabelToPrinterApp = async () => {
   printError.value = ''
+
   if (!isEditing.value) return
 
   const barcode = (formData.value.barcode || '').trim()
@@ -690,15 +813,15 @@ const shareLabelToTinyPrint = async () => {
 
   try {
     isPrinting.value = true
-    const fileUri = await buildLabelFileUri(barcode)
+    const fileUri = await buildLabelPdfFileUri(barcode)
     await Share.share({
       title: 'Etiqueta de inventario',
       text: barcode,
       files: [fileUri],
-      dialogTitle: 'Compartir etiqueta con TinyPrint'
+      dialogTitle: 'Compartir etiqueta con app de impresión'
     })
 
-    await showFeedback(`Etiqueta enviada - ${barcode}`, 'success')
+    await showFeedback(`Etiqueta lista para imprimir - ${barcode}`, 'success')
   } catch (err) {
     const errorMsg = err?.message || 'No se pudo generar la etiqueta.'
     if (!errorMsg.includes('cancel') && !errorMsg.includes('dismiss')) {
@@ -1233,175 +1356,796 @@ onBeforeRouteLeave(() => {
 </script>
 
 <style scoped>
+.inventory-content {
+  --background: #f5f7fb;
+}
+
 .page-container {
-  padding: 1rem;
+  padding: 0.75rem;
 }
 
-.page-header {
-  margin-bottom: 1rem;
-}
-
-.page-header h2 {
-  margin: 0 0 0.35rem;
-}
-
-.subtitle {
-  margin: 0;
-  color: #64748b;
-}
-
-.summary-row {
+.inventory-page {
   display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  margin-bottom: 1rem;
-}
-
-.summary-chip {
-  background: #e2e8f0;
-  color: #334155;
-  font-size: 0.82rem;
-  font-weight: 600;
-  border-radius: 999px;
-  padding: 0.35rem 0.7rem;
-}
-
-.summary-chip--complete {
-  background: #dcfce7;
-  color: #166534;
-}
-
-.summary-chip--incomplete {
-  background: #fef3c7;
-  color: #92400e;
-}
-
-.summary-chip--missing {
-  background: #fee2e2;
-  color: #991b1b;
-}
-
-.controls {
-  display: grid;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
-}
-
-.inventory-row {
-  --background: #f8fafc;
-  --color: #0f172a;
-  border-radius: 12px;
-  margin-bottom: 0.5rem;
-  border: 1px solid transparent;
-}
-
-.inventory-row--complete {
-  --background: #ecfdf5;
-  --color: #14532d;
-  border-color: #bbf7d0;
-}
-
-.inventory-row--incomplete {
-  --background: #fffbeb;
-  --color: #92400e;
-  border-color: #fde68a;
-}
-
-.inventory-row--missing {
-  --background: #fef2f2;
-  --color: #991b1b;
-  border-color: #fecaca;
-}
-
-.action-row {
-  display: grid;
-  gap: 0.5rem;
+  flex-direction: column;
+  gap: 0.6rem;
 }
 
 .modules-trigger {
   --color: #ffffff;
 }
 
-.empty-state {
+.module-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
+  gap: 0.62rem;
+  padding: 0.82rem;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #ffffff 0%, #eef7ff 100%);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+}
+
+.hero-copy,
+.inventory-title-block {
+  min-width: 0;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #2563eb;
+  margin-bottom: 0.18rem;
+}
+
+.hero-copy h2,
+.toolbar-copy h3,
+.inventory-title-block h3,
+.preview-item h3 {
+  margin: 0;
+  color: #0f172a;
+  font-weight: 850;
+}
+
+.hero-copy h2 {
+  line-height: 1.18;
+}
+
+.hero-copy p,
+.toolbar-copy p,
+.inventory-title-block p,
+.preview-item p,
+.card-footnote {
+  margin: 0.18rem 0 0;
+  color: #64748b;
+  line-height: 1.32;
+}
+
+.hero-actions {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.34rem;
+  min-width: 132px;
+  flex-shrink: 0;
+}
+
+.hero-button,
+.action-grid ion-button,
+.modal-footer ion-button,
+.modal-actions ion-button,
+.print-barcode-button,
+.close-modal-btn {
+  min-height: 38px;
+  height: auto;
+  margin: 0;
+  font-weight: 780;
+  line-height: 1.2;
+  text-transform: none;
+  white-space: normal;
+  --border-radius: 12px;
+  --padding-top: 0.52rem;
+  --padding-bottom: 0.52rem;
+  --padding-start: 0.58rem;
+  --padding-end: 0.58rem;
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.38rem;
+}
+
+.overview-card {
+  padding: 0.48rem 0.52rem;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
+  min-width: 0;
+}
+
+.overview-card--primary {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.overview-card--success {
+  background: #ecfdf5;
+  border-color: #bbf7d0;
+}
+
+.overview-card--warning {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.overview-card--danger {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.overview-label {
+  display: block;
+  color: #64748b;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+}
+
+.overview-card strong {
+  display: block;
+  margin-top: 0.12rem;
+  color: #0f172a;
+  line-height: 1;
+  font-weight: 900;
+}
+
+.toolbar-card,
+.form-card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 15px;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+}
+
+.toolbar-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.58rem;
+}
+
+.toolbar-copy {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.toolbar-copy p {
+  margin: 0;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.inventory-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(10rem, 12rem);
+  align-items: center;
+  gap: 0.42rem;
+}
+
+.inventory-searchbar {
+  padding: 0;
+  --background: #f8fafc;
+  --box-shadow: none;
+  --border-radius: 12px;
+  --color: #0f172a;
+  --placeholder-color: #94a3b8;
+  min-height: 38px;
+}
+
+.inventory-searchbar::part(container) {
+  min-height: 36px;
+}
+
+.filter-control {
+  --background: #f8fafc;
+  --border-radius: 12px;
+  --min-height: 38px;
+  --padding-start: 0.48rem;
+  --padding-end: 0.28rem;
+  --inner-padding-end: 0;
+  border: 1px solid #edf2f7;
+  border-radius: 12px;
+  color: #0f172a;
+  margin: 0;
+}
+
+.filter-control ion-label {
+  color: #64748b;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.filter-control ion-select {
+  min-height: 32px;
+  font-weight: 700;
+  --padding-start: 0.2rem;
+  --padding-end: 0.2rem;
+}
+
+.modern-segment {
+  background: #f8fafc;
+  border: 1px solid #edf2f7;
+  border-radius: 12px;
+  padding: 0.16rem;
+}
+
+.modern-segment ion-segment-button {
+  --border-radius: 10px;
+  --indicator-color: #ffffff;
+  --color: #64748b;
+  --color-checked: #0f172a;
+  min-height: 34px;
+  text-transform: none;
+  font-weight: 800;
+}
+
+.action-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.42rem;
+}
+
+.inventory-list {
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 0.54rem;
+  padding: 0 0.02rem 0.6rem;
+}
+
+.inventory-sliding {
+  border-radius: 14px;
+  overflow: hidden;
+  margin: 0;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.055);
+}
+
+.inventory-card {
+  --background: #ffffff;
+  --padding-start: 0;
+  --padding-end: 0;
+  --inner-padding-end: 0;
+  --min-height: 0;
+  --border-width: 0;
+}
+
+.inventory-card::part(native) {
+  border-radius: 14px;
+}
+
+.inventory-card-content {
+  width: 100%;
+  padding: 0.66rem;
+  border-left: 4px solid #bfdbfe;
+}
+
+.inventory-row--complete .inventory-card-content {
+  border-left-color: #86efac;
+}
+
+.inventory-row--incomplete .inventory-card-content {
+  border-left-color: #fcd34d;
+}
+
+.inventory-row--missing .inventory-card-content {
+  border-left-color: #fca5a5;
+}
+
+.inventory-topline {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.38rem;
+  margin-bottom: 0.34rem;
+}
+
+.inventory-title-block h3 {
+  line-height: 1.16;
+  word-break: break-word;
+}
+
+.inventory-title-block p {
+  line-height: 1.22;
+}
+
+.inventory-chip-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.22rem;
+  margin-bottom: 0.44rem;
+}
+
+.ui-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 16px;
+  padding: 0.08rem 0.34rem;
+  border-radius: 999px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ui-chip--muted {
+  color: #475569;
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+}
+
+.inventory-badge--complete {
+  color: #047857;
+  background: #ecfdf5;
+  border-color: #bbf7d0;
+}
+
+.inventory-badge--incomplete {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.inventory-badge--missing {
+  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.inventory-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.28rem;
+}
+
+.inventory-metric {
+  padding: 0.34rem 0.34rem;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #edf2f7;
+  min-width: 0;
+}
+
+.inventory-metric--main {
+  background: #eef6ff;
+  border-color: #bfdbfe;
+}
+
+.inventory-metric span {
+  display: block;
+  color: #64748b;
+  font-weight: 800;
+  line-height: 1.05;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.inventory-metric strong {
+  display: block;
+  margin-top: 0.12rem;
+  color: #0f172a;
+  line-height: 1.1;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.card-footnote {
+  margin-top: 0.48rem;
+  padding-top: 0.42rem;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.empty-state,
+.loading-state,
+.modern-state {
   text-align: center;
-  padding: 2rem 1rem;
-  color: #6b7280;
+  padding: 1.8rem 1rem;
+  color: #64748b;
+  background: #ffffff;
+  border: 1px dashed #cbd5e1;
+  border-radius: 18px;
 }
 
 .loading-state {
-  text-align: center;
-  padding: 2rem 1rem;
-  color: #6b7280;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
   align-items: center;
+  gap: 0.75rem;
 }
 
 .modal-form {
-  padding: 1rem;
-}
-
-.modal-content {
-  --background: #f8fafc;
-}
-
-.form-card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 0.25rem;
-  margin-bottom: 0.9rem;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
-}
-
-.barcode-preview {
-  padding: 0.75rem 0.75rem 1rem;
-  overflow: hidden;
-}
-
-.modal-footer {
-  --background: #ffffff;
-  border-top: 1px solid #e2e8f0;
+  padding: 0.72rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 :global(ion-modal.inventario-modal) {
-  --width: min(860px, 94vw);
-  --height: min(86vh, 900px);
-  --border-radius: 16px;
-  --backdrop-opacity: 0.45;
+  --width: min(820px, 94vw);
+  --height: min(86vh, 860px);
+  --border-radius: 20px;
+  --box-shadow: 0 24px 60px rgba(15, 23, 42, 0.3);
+  --backdrop-opacity: 0.42;
 }
 
-@media (max-width: 640px) {
-  :global(ion-modal.inventario-modal) {
-    --width: 96vw;
-    --height: 92vh;
-  }
+:global(ion-modal.inventario-modal::part(content)) {
+  overflow: hidden;
+  background: #f5f7fb;
 }
 
-.descripcion-preview {
+.modal-content {
+  --background: #f5f7fb;
+  --padding-bottom: 8px;
+}
+
+.form-card {
+  padding: 0.56rem;
+}
+
+.form-card ion-item {
+  --background: transparent;
+  --padding-start: 0;
+  --inner-padding-end: 0;
+  --min-height: 42px;
+}
+
+.form-card ion-label {
   color: #334155;
-  font-style: italic;
+  font-weight: 700;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.textarea-item {
+  margin-top: 0.32rem;
+}
+
+.section-label {
+  font-weight: 850;
+  color: #0f172a;
+  display: block;
+  margin: 0 0 0.45rem;
+}
+
+.print-barcode-button {
+  margin-top: 0.42rem;
 }
 
 .field-hint {
-  margin: 0.25rem 0 0.5rem;
+  margin: 0.32rem 0 0;
   color: #64748b;
-  font-size: 0.8rem;
-  padding: 0 0.75rem;
+  line-height: 1.35;
+}
+
+.field-error {
+  margin: 0.35rem 0 0;
+  color: #b91c1c;
 }
 
 .error-message {
   background: #fee2e2;
   border: 1px solid #fecaca;
-  color: #b91c1c;
-  border-radius: 8px;
-  padding: 0.75rem;
-  margin: 0 0 1rem;
+  color: #7f1d1d;
+  border-radius: 12px;
+  padding: 0.68rem;
   border-left: 4px solid #b45757;
+}
+
+.error-message--warning {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
+.modal-actions {
+  padding: 0.78rem 0.04rem 0.18rem;
+  margin-top: 0.16rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.modal-footer {
+  border-top: 1px solid #e5e7eb;
+  background: #ffffff;
+}
+
+.modal-footer ion-toolbar {
+  --background: #ffffff;
+  --padding-start: 12px;
+  --padding-end: 12px;
+  --padding-top: 8px;
+  --padding-bottom: 10px;
+}
+
+.import-form {
+  padding-bottom: 1rem;
+}
+
+.import-summary-card .inventory-metric-grid {
+  margin-top: 0.1rem;
+}
+
+.toggle-item {
+  margin-top: 0.25rem;
+}
+
+.preview-list {
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 0.38rem;
+  padding: 0;
+  margin-top: 0.42rem;
+}
+
+.preview-item {
+  --background: #f8fafc;
+  --border-radius: 12px;
+  --padding-start: 0.48rem;
+  --inner-padding-end: 0.48rem;
+  border: 1px solid #edf2f7;
+  border-radius: 12px;
+}
+
+.progress-card ion-progress-bar {
+  margin: 0.55rem 0 0.45rem;
+}
+
+.inventory-sliding ion-item-option {
+  margin: 0;
+  font-weight: 700;
+}
+
+.inventory-sliding ion-item-option::part(native) {
+  padding-inline: 0.8rem;
 }
 
 .hidden-file-input {
   display: none;
 }
+
+ion-button {
+  text-transform: none;
+}
+
+@media (max-width: 720px) {
+  .inventory-controls {
+    grid-template-columns: 1fr;
+    gap: 0.34rem;
+  }
+
+  .action-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inventory-topline {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .inventory-metric-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .page-container {
+    padding: 0.62rem;
+  }
+
+  .module-hero {
+    flex-direction: column;
+    padding: 0.68rem;
+  }
+
+  .hero-actions {
+    min-width: 0;
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  :global(ion-modal.inventario-modal) {
+    --width: 96vw;
+    --height: 90vh;
+  }
+
+  .modal-form {
+    padding: 0.7rem;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 430px) {
+  .overview-grid,
+  .inventory-metric-grid,
+  .action-grid,
+  .hero-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inventory-card-content {
+    padding: 0.56rem;
+  }
+
+  .toolbar-copy {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.05rem;
+  }
+
+  .toolbar-copy p {
+    white-space: normal;
+  }
+
+  .ui-chip {
+    padding: 0.06rem 0.28rem;
+    min-height: 15px;
+  }
+
+  .filter-control,
+  .inventory-searchbar {
+    min-height: 34px;
+  }
+}
+
+/* Escala tipográfica ÚNICA mobile-first - Inventario colaboradores
+   Máximo 4 tamaños reales:
+   XS = chips/metadatos · SM = textos secundarios · MD = lectura/campos/botones · LG = títulos/valores */
+.inventory-content,
+:global(ion-modal.inventario-modal) {
+  --text-xs: 0.72rem;
+  --text-sm: 0.82rem;
+  --text-md: 0.92rem;
+  --text-lg: 1.06rem;
+}
+
+.inventory-content,
+.inventory-content ion-content,
+.inventory-content ion-item,
+.inventory-content ion-label,
+:global(ion-modal.inventario-modal),
+:global(ion-modal.inventario-modal) ion-content,
+:global(ion-modal.inventario-modal) ion-item,
+:global(ion-modal.inventario-modal) ion-label {
+  font-size: var(--text-md) !important;
+  line-height: 1.38 !important;
+  text-rendering: optimizeLegibility !important;
+  -webkit-font-smoothing: antialiased !important;
+}
+
+.inventory-content ion-title,
+:global(ion-modal.inventario-modal) ion-title,
+.hero-copy h2,
+.module-hero h2,
+.toolbar-copy h3,
+.inventory-title-block h3,
+.preview-item h3,
+.section-label,
+:global(ion-modal.inventario-modal) h2,
+:global(ion-modal.inventario-modal) h3,
+:global(ion-modal.inventario-modal) h4 {
+  font-size: var(--text-lg) !important;
+  line-height: 1.24 !important;
+  font-weight: 850 !important;
+  letter-spacing: -0.012em !important;
+  overflow-wrap: anywhere !important;
+}
+
+.hero-copy p,
+.module-hero p,
+.toolbar-copy p,
+.inventory-title-block p,
+.preview-item p,
+.empty-state p,
+.loading-state p,
+.field-hint,
+.field-error,
+.card-footnote,
+.error-message,
+:global(ion-modal.inventario-modal) p,
+:global(ion-modal.inventario-modal) .field-hint,
+:global(ion-modal.inventario-modal) .field-error,
+:global(ion-modal.inventario-modal) .error-message {
+  font-size: var(--text-sm) !important;
+  line-height: 1.42 !important;
+  font-weight: 600 !important;
+  letter-spacing: 0 !important;
+}
+
+.form-card ion-label,
+.filter-control ion-label,
+.hero-button,
+.action-grid ion-button,
+.modal-footer ion-button,
+.modal-actions ion-button,
+.print-barcode-button,
+.close-modal-btn,
+ion-button,
+.inventory-sliding ion-item-option,
+:global(ion-modal.inventario-modal) ion-button,
+:global(ion-modal.inventario-modal) ion-label {
+  font-size: var(--text-md) !important;
+  line-height: 1.28 !important;
+  font-weight: 780 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+.form-card ion-input,
+.form-card ion-select,
+.form-card ion-textarea,
+.filter-control ion-select,
+.inventory-searchbar::part(input),
+:global(ion-modal.inventario-modal) ion-input,
+:global(ion-modal.inventario-modal) ion-select,
+:global(ion-modal.inventario-modal) ion-textarea {
+  font-size: var(--text-md) !important;
+  line-height: 1.38 !important;
+  font-weight: 600 !important;
+  letter-spacing: 0 !important;
+}
+
+.ui-chip,
+.eyebrow,
+.overview-label,
+.inventory-metric span,
+:global(ion-modal.inventario-modal) .ui-chip,
+:global(ion-modal.inventario-modal) .eyebrow,
+:global(ion-modal.inventario-modal) .inventory-metric span {
+  font-size: var(--text-xs) !important;
+  line-height: 1.15 !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.012em !important;
+}
+
+.overview-card strong,
+.inventory-metric strong,
+:global(ion-modal.inventario-modal) .inventory-metric strong {
+  font-size: var(--text-lg) !important;
+  line-height: 1.1 !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.01em !important;
+}
+
+@media (max-width: 430px) {
+  .inventory-content,
+  :global(ion-modal.inventario-modal) {
+    --text-xs: 0.72rem;
+    --text-sm: 0.82rem;
+    --text-md: 0.92rem;
+    --text-lg: 1.06rem;
+  }
+}
 </style>
+

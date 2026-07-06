@@ -1,5 +1,8 @@
 import { createRouter, createWebHistory } from '@ionic/vue-router'
 import type { RouteRecordRaw } from 'vue-router'
+/// <reference types="vite/client" />
+
+// ...resto del código
 
 const routes: Array<RouteRecordRaw> = [
   {

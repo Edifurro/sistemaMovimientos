@@ -7,12 +7,7 @@
             <ion-icon slot="icon-only" :icon="apps"></ion-icon>
           </ion-button>
         </ion-buttons>
-        <ion-title>Conteo - {{ currentConteo?.colaboradorNombre || 'Colaborador' }}</ion-title>
-        <ion-buttons slot="end">
-          <ion-button color="light" @click="finalize" :disabled="finalizing || loading">
-            {{ finalizing ? 'Aplicando...' : 'Finalizar y aplicar' }}
-          </ion-button>
-        </ion-buttons>
+        <ion-title>Conteo de colaborador</ion-title>
       </ion-toolbar>
     </ion-header>
 
@@ -48,75 +43,206 @@
       </ion-content>
     </ion-popover>
 
-    <ion-content>
-      <div class="page-container">
-        <div class="summary-row">
-          <div class="summary-chip">Esperados: {{ currentConteo?.summary?.expected ?? 0 }}</div>
-          <div class="summary-chip summary-chip--active">Presentes: {{ currentConteo?.summary?.present ?? 0 }}</div>
-          <div class="summary-chip summary-chip--inactive">Faltantes: {{ currentConteo?.summary?.missing ?? 0 }}</div>
-          <div class="summary-chip">Extras: {{ currentConteo?.summary?.extras ?? 0 }}</div>
-        </div>
-        <p v-if="currentConteo && !allExpectedScanned" class="small-muted">Debes escanear todos los items esperados antes de aplicar los ajustes.</p>
+    <ion-content class="inventory-content conteo-content">
+      <div class="page-container conteo-page">
+        <section class="module-hero">
+          <div class="hero-copy">
+            <span class="eyebrow">Conteo activo</span>
+            <h2>{{ currentConteo?.colaboradorNombre || 'Colaborador' }}</h2>
+            <p>Escanea o registra manualmente las herramientas para aplicar los ajustes del inventario.</p>
+          </div>
 
-        <div class="controls">
-          <ion-searchbar v-model="searchQuery" placeholder="Buscar por nombre, marca o código" show-clear-button="true"></ion-searchbar>
-          <div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.5rem;">
-            <ion-button expand="block" fill="outline" @click="openBarcodeScanner">
+          <div class="hero-actions">
+            <ion-button color="primary" fill="outline" class="hero-button" @click="openBarcodeScanner">
               <ion-icon slot="start" :icon="camera"></ion-icon>
               Escanear
             </ion-button>
+            <ion-button color="success" class="hero-button" @click="finalize" :disabled="finalizing || loading">
+              {{ finalizing ? 'Aplicando...' : 'Finalizar' }}
+            </ion-button>
           </div>
+        </section>
+
+        <section class="overview-grid" aria-label="Resumen del conteo">
+          <article class="overview-card overview-card--primary">
+            <span class="overview-label">Esperados</span>
+            <strong>{{ currentConteo?.summary?.expected ?? 0 }}</strong>
+          </article>
+          <article class="overview-card overview-card--success">
+            <span class="overview-label">Presentes</span>
+            <strong>{{ currentConteo?.summary?.present ?? 0 }}</strong>
+          </article>
+          <article class="overview-card overview-card--danger">
+            <span class="overview-label">Faltantes</span>
+            <strong>{{ currentConteo?.summary?.missing ?? 0 }}</strong>
+          </article>
+          <article class="overview-card overview-card--warning">
+            <span class="overview-label">Extras</span>
+            <strong>{{ currentConteo?.summary?.extras ?? 0 }}</strong>
+          </article>
+        </section>
+
+        <div v-if="currentConteo && !allExpectedScanned" class="notice-card">
+          <strong>Conteo pendiente</strong>
+          <p>Debes escanear todos los items esperados antes de aplicar los ajustes.</p>
         </div>
 
-        <div v-if="loading" class="loading-state">
+        <section class="toolbar-card">
+          <div class="toolbar-copy">
+            <h3>Control de conteo</h3>
+            <p>{{ filteredExpectedItems.length }} pendientes · {{ filteredScannedItems.length }} escaneados</p>
+          </div>
+
+          <div class="inventory-controls inventory-controls--single">
+            <ion-searchbar
+              v-model="searchQuery"
+              placeholder="Buscar herramienta, marca o código"
+              :debounce="200"
+              show-clear-button="focus"
+              inputmode="search"
+              enterkeyhint="search"
+              class="inventory-searchbar"
+            ></ion-searchbar>
+          </div>
+        </section>
+
+        <div v-if="scannedError" class="error-message error-message--warning">{{ scannedError }}</div>
+
+        <div v-if="loading" class="loading-state modern-state">
           <ion-spinner name="circles"></ion-spinner>
           <p>Cargando conteo...</p>
         </div>
 
-        <div v-if="!loading && !currentConteo" class="empty-state">
+        <div v-else-if="!currentConteo" class="empty-state modern-state">
           <p>No se encontró el conteo con el ID: <strong>{{ conteoId }}</strong></p>
           <p v-if="error" class="field-error">Error: {{ error }}</p>
           <p>Verifica que el ID exista en Firestore y que estés autenticado.</p>
         </div>
 
-        <ion-list v-if="currentConteo?.expectedItems?.length">
-          <ion-list-header>Items por escanear</ion-list-header>
-          <p v-if="filteredExpectedItems.length === 0" class="small-muted">No se encontraron coincidencias.</p>
-          <ion-item v-for="item in filteredExpectedItems" :key="item.id" :class="['inventory-row', getEstadoClassForExpected(item)]">
-            <ion-label>
-              <h2>{{ item.herramienta || item.descripcion || item.id }}</h2>
-              <p>Colaborador: {{ currentConteo?.colaboradorNombre || 'Sin colaborador' }}</p>
-              <p>Marca: {{ item.marca || 'Sin marca' }}</p>
-              <p>Barcode: {{ item.id }}</p>
-              <p>Cantidad esperada: {{ item.cantidad }}</p>
-              <p class="descripcion-preview">{{ item.descripcion || '' }}</p>
-            </ion-label>
-            <ion-badge slot="end" :class="getEstadoBadgeClassForExpected(item)">{{ getEstadoLabelForExpected(item) }}</ion-badge>
-            <ion-button slot="end" fill="clear" size="small" @click.stop="openExpectedForManual(item)">Agregar</ion-button>
-          </ion-item>
-        </ion-list>
+        <template v-else>
+          <section class="section-card">
+            <div class="section-header">
+              <div>
+                <span class="section-label">Pendientes</span>
+                <h3>Items por escanear</h3>
+              </div>
+              <span class="ui-chip ui-chip--muted">{{ filteredExpectedItems.length }} registros</span>
+            </div>
 
-        <ion-list>
-          <ion-list-header>Items escaneados</ion-list-header>
-          <ion-item-sliding v-for="s in scannedItems" :key="s.id">
-            <ion-item button @click="openScannedModal(s)" :class="['inventory-row', getScannedRowClass(s)]">
-              <ion-label>
-                <h2>{{ s.herramienta || s.barcode }}</h2>
-                <p>Barcode: {{ s.barcode }}</p>
-                <p>Cantidad: {{ s.cantidad }}</p>
-                <p v-if="s.comentario" class="descripcion-preview">Comentario: {{ s.comentario }}</p>
-              </ion-label>
-              <ion-badge slot="end" :class="getScannedBadgeClass(s)">{{ s.matchedItemId ? 'Coincide' : 'Extra' }}</ion-badge>
-            </ion-item>
-            <ion-item-options side="end">
-              <ion-item-option color="danger" @click="deleteScanned(s)">Eliminar</ion-item-option>
-            </ion-item-options>
-          </ion-item-sliding>
-        </ion-list>
+            <p v-if="filteredExpectedItems.length === 0" class="section-empty">No se encontraron coincidencias.</p>
+
+            <ion-list v-else lines="none" class="inventory-list">
+              <ion-item
+                v-for="item in filteredExpectedItems"
+                :key="item.id"
+                detail="false"
+                lines="none"
+                :class="['inventory-card', getEstadoClassForExpected(item)]"
+              >
+                <div class="inventory-card-content">
+                  <div class="inventory-topline">
+                    <div class="inventory-title-block">
+                      <h3>{{ item.herramienta || item.descripcion || item.id }}</h3>
+                      <p>{{ currentConteo?.colaboradorNombre || 'Sin colaborador' }}</p>
+                    </div>
+                    <span class="ui-chip" :class="getEstadoBadgeClassForExpected(item)">
+                      {{ getEstadoLabelForExpected(item) }}
+                    </span>
+                  </div>
+
+                  <div class="inventory-chip-row">
+                    <span class="ui-chip ui-chip--muted">{{ item.marca || 'Sin marca' }}</span>
+                    <span class="ui-chip ui-chip--muted">{{ item.id || 'Sin código' }}</span>
+                    <span v-if="item.descripcion" class="ui-chip ui-chip--muted">{{ item.descripcion }}</span>
+                  </div>
+
+                  <div class="inventory-metric-grid">
+                    <div class="inventory-metric inventory-metric--main">
+                      <span>Esperado</span>
+                      <strong>{{ item.cantidad || 1 }}</strong>
+                    </div>
+                    <div class="inventory-metric">
+                      <span>Escaneado</span>
+                      <strong>{{ getConteoScannedQuantity(item.id) }}</strong>
+                    </div>
+                    <div class="inventory-metric">
+                      <span>Pendiente</span>
+                      <strong>{{ getExpectedPendingQuantity(item) }}</strong>
+                    </div>
+                  </div>
+
+                  <ion-button expand="block" fill="outline" class="card-action-button" @click.stop="openExpectedForManual(item)">
+                    Agregar manualmente
+                  </ion-button>
+                </div>
+              </ion-item>
+            </ion-list>
+          </section>
+
+          <section class="section-card">
+            <div class="section-header">
+              <div>
+                <span class="section-label">Capturados</span>
+                <h3>Items escaneados</h3>
+              </div>
+              <span class="ui-chip ui-chip--muted">{{ filteredScannedItems.length }} registros</span>
+            </div>
+
+            <p v-if="filteredScannedItems.length === 0" class="section-empty">Aún no hay items escaneados.</p>
+
+            <ion-list v-else lines="none" class="inventory-list">
+              <ion-item-sliding v-for="s in filteredScannedItems" :key="s.id" class="inventory-sliding">
+                <ion-item button detail="false" lines="none" @click="openScannedModal(s)" :class="['inventory-card', getScannedRowClass(s)]">
+                  <div class="inventory-card-content">
+                    <div class="inventory-topline">
+                      <div class="inventory-title-block">
+                        <h3>{{ s.herramienta || s.barcode }}</h3>
+                        <p>{{ s.marca || 'Sin marca' }}</p>
+                      </div>
+                      <span class="ui-chip" :class="getScannedBadgeClass(s)">
+                        {{ s.matchedItemId ? 'Coincide' : 'Extra' }}
+                      </span>
+                    </div>
+
+                    <div class="inventory-chip-row">
+                      <span class="ui-chip ui-chip--muted">{{ s.barcode || 'Sin código' }}</span>
+                      <span class="ui-chip ui-chip--muted">{{ s.estado || 'Sin estado' }}</span>
+                    </div>
+
+                    <div class="inventory-metric-grid">
+                      <div class="inventory-metric inventory-metric--main">
+                        <span>Cantidad</span>
+                        <strong>{{ s.cantidad || 1 }}</strong>
+                      </div>
+                      <div class="inventory-metric">
+                        <span>Código</span>
+                        <strong>{{ s.barcode || '—' }}</strong>
+                      </div>
+                      <div class="inventory-metric">
+                        <span>Tipo</span>
+                        <strong>{{ s.matchedItemId ? 'Inventario' : 'Extra' }}</strong>
+                      </div>
+                    </div>
+
+                    <p v-if="s.comentario" class="card-footnote">{{ s.comentario }}</p>
+                  </div>
+                </ion-item>
+                <ion-item-options side="end">
+                  <ion-item-option color="danger" @click="deleteScanned(s)">Eliminar</ion-item-option>
+                </ion-item-options>
+              </ion-item-sliding>
+            </ion-list>
+          </section>
+        </template>
       </div>
     </ion-content>
 
-    <ion-modal :is-open="isScannedModalOpen" :backdrop-dismiss="true" @did-dismiss="closeScannedModal">
+    <ion-modal
+      :is-open="isScannedModalOpen"
+      :backdrop-dismiss="true"
+      css-class="conteo-modal"
+      @did-dismiss="closeScannedModal"
+    >
       <ion-header>
         <ion-toolbar color="primary">
           <ion-title>{{ isEditingScanned ? 'Editar item escaneado' : 'Nuevo item escaneado' }}</ion-title>
@@ -132,36 +258,44 @@
       <ion-content class="modal-content">
         <div class="modal-form">
           <div class="form-card">
-            <ion-item>
+            <span class="section-label">Identificación</span>
+            <ion-item lines="none">
               <ion-label position="stacked">Barcode</ion-label>
               <ion-input v-model="scannedForm.barcode" type="text" readonly :legacy="true"></ion-input>
             </ion-item>
 
-            <ion-item>
-              <ion-label position="stacked">Herramienta</ion-label>
-              <ion-input v-model="scannedForm.herramienta" type="text" :legacy="true"></ion-input>
-            </ion-item>
+            <div class="form-grid">
+              <ion-item lines="none">
+                <ion-label position="stacked">Herramienta</ion-label>
+                <ion-input v-model="scannedForm.herramienta" type="text" :legacy="true"></ion-input>
+              </ion-item>
 
-            <ion-item>
-              <ion-label position="stacked">Marca</ion-label>
-              <ion-input v-model="scannedForm.marca" type="text" :legacy="true"></ion-input>
-            </ion-item>
+              <ion-item lines="none">
+                <ion-label position="stacked">Marca</ion-label>
+                <ion-input v-model="scannedForm.marca" type="text" :legacy="true"></ion-input>
+              </ion-item>
+            </div>
+          </div>
 
-            <ion-item>
-              <ion-label position="stacked">Cantidad</ion-label>
-              <ion-input v-model.number="scannedForm.cantidad" type="number" :legacy="true"></ion-input>
-            </ion-item>
+          <div class="form-card">
+            <span class="section-label">Detalle del conteo</span>
+            <div class="form-grid">
+              <ion-item lines="none">
+                <ion-label position="stacked">Cantidad</ion-label>
+                <ion-input v-model.number="scannedForm.cantidad" type="number" min="1" step="1" :legacy="true"></ion-input>
+              </ion-item>
 
-            <ion-item>
-              <ion-label position="stacked">Estado</ion-label>
-              <ion-select v-model="scannedForm.estado" placeholder="Selecciona estado">
-                <ion-select-option value="completo">Completo</ion-select-option>
-                <ion-select-option value="incompleto">Incompleto</ion-select-option>
-                <ion-select-option value="faltante">Faltante</ion-select-option>
-              </ion-select>
-            </ion-item>
+              <ion-item lines="none">
+                <ion-label position="stacked">Estado</ion-label>
+                <ion-select v-model="scannedForm.estado" placeholder="Selecciona estado" interface="popover">
+                  <ion-select-option value="completo">Completo</ion-select-option>
+                  <ion-select-option value="incompleto">Incompleto</ion-select-option>
+                  <ion-select-option value="faltante">Faltante</ion-select-option>
+                </ion-select>
+              </ion-item>
+            </div>
 
-            <ion-item>
+            <ion-item lines="none" class="textarea-item">
               <ion-label position="stacked">Comentario</ion-label>
               <ion-textarea v-model="scannedForm.comentario" rows="3" :legacy="true"></ion-textarea>
             </ion-item>
@@ -193,6 +327,7 @@ import {
   IonButtons,
   IonButton,
   IonIcon,
+  IonPopover,
   IonList,
   IonItem,
   IonLabel,
@@ -259,6 +394,20 @@ const filteredExpectedItems = computed(() => {
       String(item.herramienta || '').toLowerCase().includes(q) ||
       String(item.descripcion || '').toLowerCase().includes(q) ||
       String(item.marca || '').toLowerCase().includes(q)
+  })
+})
+
+
+const filteredScannedItems = computed(() => {
+  const list = scannedItems.value || []
+  const q = String(searchQuery.value || '').trim().toLowerCase()
+  if (!q) return list
+  return list.filter((item) => {
+    return String(item.barcode || '').toLowerCase().includes(q) ||
+      String(item.herramienta || '').toLowerCase().includes(q) ||
+      String(item.marca || '').toLowerCase().includes(q) ||
+      String(item.estado || '').toLowerCase().includes(q) ||
+      String(item.comentario || '').toLowerCase().includes(q)
   })
 })
 
@@ -444,6 +593,12 @@ const getConteoScannedQuantity = (itemId) => {
   return (scannedItems.value || []).filter((s) => String(s.matchedItemId) === String(itemId)).reduce((acc, s) => acc + Number(s.cantidad || 1), 0)
 }
 
+const getExpectedPendingQuantity = (item) => {
+  const expectedQty = Number(item?.cantidad || 1)
+  const scannedQty = getConteoScannedQuantity(item?.id)
+  return Math.max(expectedQty - scannedQty, 0)
+}
+
 const getEstadoClassForExpected = (item) => {
   const scannedQty = getConteoScannedQuantity(item.id)
   const expectedQty = Number(item.cantidad || 1)
@@ -540,42 +695,724 @@ const finalize = async () => {
 </script>
 
 <style scoped>
-.modules-trigger { --padding-start: 8px; --padding-end: 8px; --color: #ffffff; font-size: .9rem }
-.modules-trigger ion-icon { color: #fff }
-.page-container { padding: 1rem; }
-.summary-row { display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:1rem }
-.summary-chip { background:#e2e8f0; color:#334155; font-size:0.82rem; font-weight:600; border-radius:999px; padding:0.35rem 0.7rem }
-.summary-chip--active { background:#dcfce7; color:#166534 }
-.summary-chip--inactive { background:#fee2e2; color:#b91c1c }
-.controls { margin-bottom:1rem }
-.loading-state { text-align:center; padding:2rem 1rem }
-.form-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:0.25rem; margin-bottom:0.9rem }
-.modal-footer { --background: #ffffff; border-top: 1px solid #e2e8f0 }
-:global(ion-modal) { --width: min(760px, 92vw); --height: min(82vh, 820px); --border-radius: 16px; --backdrop-opacity: 0.45 }
-
-.inventory-row {
-  --background: #f8fafc;
-  --color: #0f172a;
-  border-radius: 12px;
-  margin-bottom: 0.5rem;
-  border: 1px solid transparent;
+.inventory-content {
+  --background: #f5f7fb;
 }
 
-.inventory-row--complete {
-  --background: #ecfdf5;
-  --color: #14532d;
+.page-container {
+  padding: 0.75rem;
+}
+
+.conteo-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0.62rem;
+}
+
+.modules-trigger {
+  --padding-start: 8px;
+  --padding-end: 8px;
+  --color: #ffffff;
+}
+
+.modules-trigger ion-icon {
+  color: #ffffff;
+}
+
+.module-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
+  gap: 0.62rem;
+  padding: 0.82rem;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #ffffff 0%, #eef7ff 100%);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+}
+
+.hero-copy,
+.inventory-title-block {
+  min-width: 0;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #2563eb;
+  margin-bottom: 0.18rem;
+}
+
+.hero-copy h2,
+.toolbar-copy h3,
+.section-header h3,
+.inventory-title-block h3 {
+  margin: 0;
+  color: #0f172a;
+  font-weight: 850;
+}
+
+.hero-copy h2 {
+  line-height: 1.18;
+}
+
+.hero-copy p,
+.toolbar-copy p,
+.inventory-title-block p,
+.section-empty,
+.card-footnote,
+.notice-card p {
+  margin: 0.18rem 0 0;
+  color: #64748b;
+  line-height: 1.32;
+}
+
+.hero-actions {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.34rem;
+  min-width: 132px;
+  flex-shrink: 0;
+}
+
+.hero-button,
+.card-action-button,
+.modal-footer ion-button,
+.close-modal-btn {
+  min-height: 38px;
+  height: auto;
+  margin: 0;
+  font-weight: 780;
+  line-height: 1.2;
+  text-transform: none;
+  white-space: normal;
+  --border-radius: 12px;
+  --padding-top: 0.52rem;
+  --padding-bottom: 0.52rem;
+  --padding-start: 0.58rem;
+  --padding-end: 0.58rem;
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.38rem;
+}
+
+.overview-card {
+  padding: 0.48rem 0.52rem;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
+  min-width: 0;
+}
+
+.overview-card--primary {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.overview-card--success {
+  background: #ecfdf5;
   border-color: #bbf7d0;
 }
 
-.inventory-row--incomplete {
-  --background: #fffbeb;
-  --color: #92400e;
+.overview-card--warning {
+  background: #fffbeb;
   border-color: #fde68a;
 }
 
-.inventory-row--missing {
-  --background: #fef2f2;
-  --color: #991b1b;
+.overview-card--danger {
+  background: #fef2f2;
   border-color: #fecaca;
+}
+
+.overview-label {
+  display: block;
+  color: #64748b;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+}
+
+.overview-card strong {
+  display: block;
+  margin-top: 0.12rem;
+  color: #0f172a;
+  line-height: 1;
+  font-weight: 900;
+}
+
+.toolbar-card,
+.section-card,
+.form-card,
+.notice-card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 15px;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+}
+
+.toolbar-card,
+.section-card,
+.notice-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.58rem;
+}
+
+.notice-card {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.notice-card strong {
+  color: #92400e;
+  font-weight: 850;
+}
+
+.notice-card p {
+  color: #92400e;
+}
+
+.toolbar-copy,
+.section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.toolbar-copy p {
+  margin: 0;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.inventory-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  gap: 0.42rem;
+}
+
+.inventory-searchbar {
+  padding: 0;
+  --background: #f8fafc;
+  --box-shadow: none;
+  --border-radius: 12px;
+  --color: #0f172a;
+  --placeholder-color: #94a3b8;
+  min-height: 38px;
+}
+
+.inventory-searchbar::part(container) {
+  min-height: 36px;
+}
+
+.section-header {
+  align-items: flex-start;
+}
+
+.section-label {
+  display: block;
+  margin: 0 0 0.18rem;
+  color: #2563eb;
+  font-weight: 850;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.inventory-list {
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 0.54rem;
+  padding: 0;
+}
+
+.inventory-sliding {
+  border-radius: 14px;
+  overflow: hidden;
+  margin: 0;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.055);
+}
+
+.inventory-card {
+  --background: #ffffff;
+  --padding-start: 0;
+  --padding-end: 0;
+  --inner-padding-end: 0;
+  --min-height: 0;
+  --border-width: 0;
+  width: 100%;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.055);
+}
+
+.inventory-sliding .inventory-card {
+  box-shadow: none;
+}
+
+.inventory-card::part(native) {
+  border-radius: 14px;
+}
+
+.inventory-card-content {
+  width: 100%;
+  padding: 0.66rem;
+  border-left: 4px solid #bfdbfe;
+}
+
+.inventory-row--complete .inventory-card-content {
+  border-left-color: #86efac;
+}
+
+.inventory-row--incomplete .inventory-card-content {
+  border-left-color: #fcd34d;
+}
+
+.inventory-row--missing .inventory-card-content {
+  border-left-color: #fca5a5;
+}
+
+.inventory-topline {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.38rem;
+  margin-bottom: 0.34rem;
+}
+
+.inventory-title-block h3 {
+  line-height: 1.16;
+  word-break: break-word;
+}
+
+.inventory-title-block p {
+  line-height: 1.22;
+}
+
+.inventory-chip-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.22rem;
+  margin-bottom: 0.44rem;
+}
+
+.ui-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 16px;
+  padding: 0.08rem 0.34rem;
+  border-radius: 999px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ui-chip--muted {
+  color: #475569;
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+}
+
+.inventory-badge--complete {
+  color: #047857;
+  background: #ecfdf5;
+  border-color: #bbf7d0;
+}
+
+.inventory-badge--incomplete {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.inventory-badge--missing {
+  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.inventory-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.28rem;
+}
+
+.inventory-metric {
+  padding: 0.34rem 0.34rem;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #edf2f7;
+  min-width: 0;
+}
+
+.inventory-metric--main {
+  background: #eef6ff;
+  border-color: #bfdbfe;
+}
+
+.inventory-metric span {
+  display: block;
+  color: #64748b;
+  font-weight: 800;
+  line-height: 1.05;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.inventory-metric strong {
+  display: block;
+  margin-top: 0.12rem;
+  color: #0f172a;
+  line-height: 1.1;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.card-action-button {
+  margin-top: 0.5rem;
+}
+
+.card-footnote {
+  margin-top: 0.48rem;
+  padding-top: 0.42rem;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.empty-state,
+.loading-state,
+.modern-state {
+  text-align: center;
+  padding: 1.8rem 1rem;
+  color: #64748b;
+  background: #ffffff;
+  border: 1px dashed #cbd5e1;
+  border-radius: 18px;
+}
+
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.section-empty {
+  text-align: center;
+  padding: 1rem 0.4rem;
+}
+
+.error-message {
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  color: #7f1d1d;
+  border-radius: 12px;
+  padding: 0.68rem;
+  border-left: 4px solid #b45757;
+}
+
+.error-message--warning {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
+.field-error {
+  margin: 0.35rem 0 0;
+  color: #b91c1c;
+}
+
+.modal-form {
+  padding: 0.72rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+:global(ion-modal.conteo-modal) {
+  --width: min(820px, 94vw);
+  --height: min(86vh, 860px);
+  --border-radius: 20px;
+  --box-shadow: 0 24px 60px rgba(15, 23, 42, 0.3);
+  --backdrop-opacity: 0.42;
+}
+
+:global(ion-modal.conteo-modal::part(content)) {
+  overflow: hidden;
+  background: #f5f7fb;
+}
+
+.modal-content {
+  --background: #f5f7fb;
+  --padding-bottom: 8px;
+}
+
+.form-card {
+  padding: 0.56rem;
+}
+
+.form-card ion-item {
+  --background: transparent;
+  --padding-start: 0;
+  --inner-padding-end: 0;
+  --min-height: 42px;
+}
+
+.form-card ion-label {
+  color: #334155;
+  font-weight: 700;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.textarea-item {
+  margin-top: 0.32rem;
+}
+
+.modal-footer {
+  border-top: 1px solid #e5e7eb;
+  background: #ffffff;
+}
+
+.modal-footer ion-toolbar {
+  --background: #ffffff;
+  --padding-start: 12px;
+  --padding-end: 12px;
+  --padding-top: 8px;
+  --padding-bottom: 10px;
+}
+
+.inventory-sliding ion-item-option {
+  margin: 0;
+  font-weight: 700;
+}
+
+.inventory-sliding ion-item-option::part(native) {
+  padding-inline: 0.8rem;
+}
+
+ion-button {
+  text-transform: none;
+}
+
+@media (max-width: 720px) {
+  .inventory-topline,
+  .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .inventory-metric-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .page-container {
+    padding: 0.62rem;
+  }
+
+  .module-hero {
+    flex-direction: column;
+    padding: 0.68rem;
+  }
+
+  .hero-actions {
+    min-width: 0;
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  :global(ion-modal.conteo-modal) {
+    --width: 96vw;
+    --height: 90vh;
+  }
+
+  .modal-form {
+    padding: 0.7rem;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 430px) {
+  .overview-grid,
+  .inventory-metric-grid,
+  .hero-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inventory-card-content {
+    padding: 0.56rem;
+  }
+
+  .toolbar-copy {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.05rem;
+  }
+
+  .toolbar-copy p {
+    white-space: normal;
+  }
+
+  .ui-chip {
+    padding: 0.06rem 0.28rem;
+    min-height: 15px;
+  }
+
+  .inventory-searchbar {
+    min-height: 34px;
+  }
+}
+
+/* Escala tipográfica ÚNICA mobile-first - Conteo colaborador
+   Máximo 4 tamaños reales:
+   XS = chips/metadatos · SM = textos secundarios · MD = lectura/campos/botones · LG = títulos/valores */
+.inventory-content,
+:global(ion-modal.conteo-modal) {
+  --text-xs: 0.72rem;
+  --text-sm: 0.82rem;
+  --text-md: 0.92rem;
+  --text-lg: 1.06rem;
+}
+
+.inventory-content,
+.inventory-content ion-content,
+.inventory-content ion-item,
+.inventory-content ion-label,
+:global(ion-modal.conteo-modal),
+:global(ion-modal.conteo-modal) ion-content,
+:global(ion-modal.conteo-modal) ion-item,
+:global(ion-modal.conteo-modal) ion-label {
+  font-size: var(--text-md) !important;
+  line-height: 1.38 !important;
+  text-rendering: optimizeLegibility !important;
+  -webkit-font-smoothing: antialiased !important;
+}
+
+.inventory-content ion-title,
+:global(ion-modal.conteo-modal) ion-title,
+.hero-copy h2,
+.module-hero h2,
+.toolbar-copy h3,
+.section-header h3,
+.inventory-title-block h3,
+.section-label,
+:global(ion-modal.conteo-modal) h2,
+:global(ion-modal.conteo-modal) h3,
+:global(ion-modal.conteo-modal) h4 {
+  font-size: var(--text-lg) !important;
+  line-height: 1.24 !important;
+  font-weight: 850 !important;
+  letter-spacing: -0.012em !important;
+  overflow-wrap: anywhere !important;
+}
+
+.hero-copy p,
+.module-hero p,
+.toolbar-copy p,
+.inventory-title-block p,
+.empty-state p,
+.loading-state p,
+.section-empty,
+.field-error,
+.card-footnote,
+.error-message,
+.notice-card p,
+:global(ion-modal.conteo-modal) p,
+:global(ion-modal.conteo-modal) .field-error,
+:global(ion-modal.conteo-modal) .error-message {
+  font-size: var(--text-sm) !important;
+  line-height: 1.42 !important;
+  font-weight: 600 !important;
+  letter-spacing: 0 !important;
+}
+
+.hero-button,
+.card-action-button,
+.modal-footer ion-button,
+.close-modal-btn,
+ion-button,
+.inventory-sliding ion-item-option,
+.form-card ion-label,
+:global(ion-modal.conteo-modal) ion-button,
+:global(ion-modal.conteo-modal) ion-label {
+  font-size: var(--text-md) !important;
+  line-height: 1.28 !important;
+  font-weight: 780 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+.form-card ion-input,
+.form-card ion-select,
+.form-card ion-textarea,
+.inventory-searchbar::part(input),
+:global(ion-modal.conteo-modal) ion-input,
+:global(ion-modal.conteo-modal) ion-select,
+:global(ion-modal.conteo-modal) ion-textarea {
+  font-size: var(--text-md) !important;
+  line-height: 1.38 !important;
+  font-weight: 600 !important;
+  letter-spacing: 0 !important;
+}
+
+.ui-chip,
+.eyebrow,
+.overview-label,
+.inventory-metric span,
+:global(ion-modal.conteo-modal) .ui-chip,
+:global(ion-modal.conteo-modal) .eyebrow,
+:global(ion-modal.conteo-modal) .inventory-metric span {
+  font-size: var(--text-xs) !important;
+  line-height: 1.15 !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.012em !important;
+}
+
+.overview-card strong,
+.inventory-metric strong,
+:global(ion-modal.conteo-modal) .inventory-metric strong {
+  font-size: var(--text-lg) !important;
+  line-height: 1.1 !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.01em !important;
+}
+
+@media (max-width: 430px) {
+  .inventory-content,
+  :global(ion-modal.conteo-modal) {
+    --text-xs: 0.72rem;
+    --text-sm: 0.82rem;
+    --text-md: 0.92rem;
+    --text-lg: 1.06rem;
+  }
 }
 </style>

@@ -1,24 +1,34 @@
 import { ref } from 'vue'
 import { db } from '../services/firebase'
 import { collection, addDoc, getDocs, query, orderBy, limit, where } from 'firebase/firestore'
+import { getAuth } from 'firebase/auth'
 
 const movimientos = ref([])
 const loading = ref(false)
 const error = ref(null)
 
 export function useMovimientos() {
-  const logMovimiento = async ({ productoId, productoNombre = '', cantidad, tipo, motivo = '', usuarioId = null, usuarioNombre = '' }) => {
+  const logMovimiento = async ({ productoId, productoNombre = '', cantidad, tipo, motivo = '', usuarioId = null, usuarioNombre = '', areaOrigen = null, trabajoId = null, empresaTrabajo = '', unidadTrabajo = '', descripcionTrabajo = '', tipoOperacion = '' }) => {
     loading.value = true
     error.value = null
     try {
+      const authUser = getAuth()?.currentUser || null
+      const createdBy = usuarioId || authUser?.uid || null
       const payload = {
         productoId,
         productoNombre: String(productoNombre || '').trim() || null,
         cantidad: Number(cantidad),
         tipo: tipo === 'salida' ? 'salida' : 'entrada',
         motivo: motivo || 'Ajuste rapido',
-        usuarioId: usuarioId || null,
-        usuarioNombre: String(usuarioNombre || '').trim() || null,
+        usuarioId: createdBy,
+        usuarioNombre: String(usuarioNombre || authUser?.email || '').trim() || null,
+        createdBy,
+        areaOrigen: areaOrigen || null,
+        trabajoId: trabajoId || null,
+        empresaTrabajo: String(empresaTrabajo || '').trim() || null,
+        unidadTrabajo: String(unidadTrabajo || '').trim() || null,
+        descripcionTrabajo: String(descripcionTrabajo || '').trim() || null,
+        tipoOperacion: String(tipoOperacion || '').trim() || null,
         createdAt: new Date().toISOString()
       }
 
