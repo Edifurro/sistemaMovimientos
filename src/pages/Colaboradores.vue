@@ -8,12 +8,6 @@
           </ion-button>
         </ion-buttons>
         <ion-title>Colaboradores</ion-title>
-        <ion-buttons slot="end">
-          <ion-button color="light" @click="openCreateModal">
-            <ion-icon slot="start" :icon="add"></ion-icon>
-            Nuevo
-          </ion-button>
-        </ion-buttons>
       </ion-toolbar>
     </ion-header>
 
@@ -52,64 +46,138 @@
         </ion-list>
       </ion-content>
     </ion-popover>
-    <ion-content>
+
+    <ion-content class="collaborators-content">
       <ion-refresher slot="fixed" @ionRefresh="handleRefresh">
-        <ion-refresher-content pulling-text="Desliza para actualizar" refreshing-spinner="circles"></ion-refresher-content>
+        <ion-refresher-content
+          pulling-text="Desliza para actualizar"
+          refreshing-spinner="circles"
+        ></ion-refresher-content>
       </ion-refresher>
 
-      <div class="page-container">
-        <div class="page-header">
-          <h2>Gestión de Colaboradores</h2>
-        </div>
+      <div class="page-container collaborators-page">
+        <section class="module-hero">
+          <div class="hero-copy">
+            <span class="eyebrow">Equipo</span>
+            <h2>Colaboradores</h2>
+            <p>Administra el directorio, los cargos y el estado de cada colaborador.</p>
+          </div>
 
-        <div class="summary-row">
-          <div class="summary-chip summary-chip--active">Activos: {{ activeCount }}</div>
-          <div class="summary-chip summary-chip--inactive">Inactivos: {{ inactiveCount }}</div>
-          <div class="summary-chip">Total: {{ colaboradores.length }}</div>
-        </div>
+          <div class="hero-actions">
+            <ion-button color="success" class="hero-button" @click="openCreateModal">
+              <ion-icon slot="start" :icon="add"></ion-icon>
+              Nuevo colaborador
+            </ion-button>
+          </div>
+        </section>
 
-        <div class="controls">
+        <section class="overview-grid" aria-label="Resumen de colaboradores">
+          <article class="overview-card overview-card--primary">
+            <span class="overview-label">Colaboradores</span>
+            <strong>{{ colaboradores.length }}</strong>
+          </article>
+
+          <article class="overview-card">
+            <span class="overview-label">Activos</span>
+            <strong>{{ activeCount }}</strong>
+          </article>
+
+          <article class="overview-card">
+            <span class="overview-label">Inactivos</span>
+            <strong>{{ inactiveCount }}</strong>
+          </article>
+
+          <article class="overview-card">
+            <span class="overview-label">Mostrados</span>
+            <strong>{{ filteredColaboradores.length }}</strong>
+          </article>
+        </section>
+
+        <section class="toolbar-card">
+          <div class="toolbar-copy">
+            <h3>Directorio</h3>
+            <p>{{ filteredColaboradores.length }} registros</p>
+          </div>
+
           <ion-searchbar
             v-model="searchText"
-            placeholder="Buscar por nombre, codigo o cargo"
+            placeholder="Buscar nombre, código o cargo"
             :debounce="200"
+            show-clear-button="focus"
+            inputmode="search"
+            enterkeyhint="search"
+            class="collaborator-searchbar"
           ></ion-searchbar>
-          <ion-segment v-model="statusFilter">
-            <ion-segment-button value="activos">
-              <ion-label>Activos</ion-label>
-            </ion-segment-button>
-            <ion-segment-button value="inactivos">
-              <ion-label>Inactivos</ion-label>
-            </ion-segment-button>
-            <ion-segment-button value="todos">
-              <ion-label>Todos</ion-label>
-            </ion-segment-button>
+
+          <ion-segment v-model="statusFilter" class="status-filter-segment">
+            <ion-segment-button value="activos">Activos</ion-segment-button>
+            <ion-segment-button value="inactivos">Inactivos</ion-segment-button>
+            <ion-segment-button value="todos">Todos</ion-segment-button>
           </ion-segment>
+        </section>
+
+        <div v-if="composableError" class="error-message">
+          {{ composableError }}
         </div>
 
-        <div v-if="composableError" class="error-message">{{ composableError }}</div>
-
-        <div v-if="loading && !filteredColaboradores.length" class="loading-state">
+        <div v-if="loading && !filteredColaboradores.length" class="loading-state modern-state">
           <ion-spinner name="circles"></ion-spinner>
           <p>Cargando colaboradores...</p>
         </div>
 
-        <ion-list v-else-if="filteredColaboradores.length > 0">
-          <ion-item-sliding v-for="colab in filteredColaboradores" :key="colab.id">
-              <ion-item button @click="openDetailModal(colab)">
-                <ion-label>
-                  <h2>{{ colab.nombre }}</h2>
-                  <p>Código: {{ colab.codigoEmpleado || 'Sin codigo' }}</p>
-                  <p>{{ colab.cargo || 'Sin cargo' }} · {{ colab.departamento || 'Sin departamento' }}</p>
-                  <p class="descripcion-preview">{{ colab.descripcion || 'Sin descripcion' }}</p>
-                  <p>Tel: {{ colab.telefono || 'Sin telefono' }}</p>
-                </ion-label>
-                <ion-badge slot="end" :color="colab.activo === false ? 'medium' : 'success'">
-                  {{ colab.activo === false ? 'Inactivo' : 'Activo' }}
-                </ion-badge>
-              </ion-item>
+        <ion-list
+          v-else-if="filteredColaboradores.length > 0"
+          lines="none"
+          class="collaborators-list"
+        >
+          <ion-item-sliding
+            v-for="colab in filteredColaboradores"
+            :key="colab.id"
+            class="collaborator-sliding"
+          >
+            <ion-item
+              button
+              detail="false"
+              lines="none"
+              class="collaborator-card"
+              @click="openDetailModal(colab)"
+            >
+              <div class="collaborator-card-content">
+                <div class="collaborator-topline">
+                  <div class="collaborator-title-block">
+                    <h3>{{ colab.nombre }}</h3>
+                    <p>{{ colab.codigoEmpleado || 'Sin código' }}</p>
+                  </div>
+
+                  <span
+                    class="ui-chip"
+                    :class="colab.activo === false ? 'ui-chip--muted' : 'ui-chip--success'"
+                  >
+                    {{ colab.activo === false ? 'Inactivo' : 'Activo' }}
+                  </span>
+                </div>
+
+                <div class="collaborator-chip-row">
+                  <span class="ui-chip ui-chip--primary">
+                    {{ colab.cargo || 'Sin cargo' }}
+                  </span>
+                  <span class="ui-chip ui-chip--muted">
+                    {{ colab.departamento || 'Sin departamento' }}
+                  </span>
+                </div>
+
+                <p class="collaborator-description">
+                  {{ colab.descripcion || 'Sin descripción registrada.' }}
+                </p>
+
+                <div class="collaborator-contact">
+                  <span>Teléfono</span>
+                  <strong>{{ colab.telefono || 'Sin teléfono' }}</strong>
+                </div>
+              </div>
+            </ion-item>
+
             <ion-item-options side="end">
-              
               <ion-item-option color="primary" @click="openEditModal(colab)">
                 Editar
               </ion-item-option>
@@ -123,9 +191,12 @@
           </ion-item-sliding>
         </ion-list>
 
-        <div v-else class="empty-state">
-          <p>No hay colaboradores para el filtro actual</p>
-          <ion-button fill="outline" @click="openCreateModal">Crear primer colaborador</ion-button>
+        <div v-else class="empty-state modern-state">
+          <strong>No hay colaboradores para el filtro actual</strong>
+          <p>Prueba con otro estado o registra un nuevo colaborador.</p>
+          <ion-button fill="outline" @click="openCreateModal">
+            Crear colaborador
+          </ion-button>
         </div>
       </div>
     </ion-content>
@@ -138,7 +209,7 @@
     >
       <ion-header>
         <ion-toolbar color="primary">
-          <ion-title>{{ isEditing ? 'Editar Colaborador' : 'Nuevo Colaborador' }}</ion-title>
+          <ion-title>{{ isEditing ? 'Editar colaborador' : 'Nuevo colaborador' }}</ion-title>
           <ion-buttons slot="end">
             <ion-button @click="closeModal" class="close-modal-btn">
               <ion-icon slot="start" :icon="closeOutline"></ion-icon>
@@ -147,67 +218,124 @@
           </ion-buttons>
         </ion-toolbar>
       </ion-header>
+
       <ion-content class="modal-content">
         <div class="modal-form">
-          <div class="form-card">
-            <ion-item>
-              <ion-label position="stacked">Codigo Empleado</ion-label>
+          <section class="form-card">
+            <div class="form-section-heading">
+              <h3>Información principal</h3>
+              <p>Datos de identificación del colaborador.</p>
+            </div>
+
+            <ion-item lines="none" class="modern-field">
               <ion-input
                 v-model="formData.codigoEmpleado"
                 type="text"
-                :legacy="true"
+                label="Código de empleado"
+                label-placement="floating"
                 readonly
               ></ion-input>
             </ion-item>
-            <p v-if="isGeneratingCode" class="field-hint">Generando codigo automatico...</p>
-            <p v-else class="field-hint">El codigo se asigna automaticamente, no es editable</p>
-            <p v-if="validationErrors.codigoEmpleado" class="field-error">{{ validationErrors.codigoEmpleado }}</p>
+            <p v-if="isGeneratingCode" class="field-hint">
+              Generando código automático...
+            </p>
+            <p v-else class="field-hint">
+              El código se asigna automáticamente y no es editable.
+            </p>
+            <p v-if="validationErrors.codigoEmpleado" class="field-error">
+              {{ validationErrors.codigoEmpleado }}
+            </p>
 
-            <ion-item>
-              <ion-label position="stacked">Nombre</ion-label>
-              <ion-input v-model="formData.nombre" type="text" :legacy="true"></ion-input>
+            <ion-item lines="none" class="modern-field">
+              <ion-input
+                v-model="formData.nombre"
+                type="text"
+                label="Nombre"
+                label-placement="floating"
+              ></ion-input>
             </ion-item>
-            <p v-if="validationErrors.nombre" class="field-error">{{ validationErrors.nombre }}</p>
-          </div>
+            <p v-if="validationErrors.nombre" class="field-error">
+              {{ validationErrors.nombre }}
+            </p>
+          </section>
 
-          <div class="form-card">
-            <ion-item>
-              <ion-label position="stacked">Cargo</ion-label>
-              <ion-input v-model="formData.cargo" type="text" :legacy="true"></ion-input>
+          <section class="form-card">
+            <div class="form-section-heading">
+              <h3>Información laboral</h3>
+              <p>Cargo, departamento y datos de contacto.</p>
+            </div>
+
+            <div class="form-grid">
+              <div>
+                <ion-item lines="none" class="modern-field">
+                  <ion-input
+                    v-model="formData.cargo"
+                    type="text"
+                    label="Cargo"
+                    label-placement="floating"
+                  ></ion-input>
+                </ion-item>
+                <p v-if="validationErrors.cargo" class="field-error">
+                  {{ validationErrors.cargo }}
+                </p>
+              </div>
+
+              <div>
+                <ion-item lines="none" class="modern-field">
+                  <ion-input
+                    v-model="formData.departamento"
+                    type="text"
+                    label="Departamento"
+                    label-placement="floating"
+                  ></ion-input>
+                </ion-item>
+                <p v-if="validationErrors.departamento" class="field-error">
+                  {{ validationErrors.departamento }}
+                </p>
+              </div>
+            </div>
+
+            <ion-item lines="none" class="modern-field">
+              <ion-input
+                v-model="formData.telefono"
+                type="tel"
+                label="Teléfono"
+                label-placement="floating"
+              ></ion-input>
             </ion-item>
-            <p v-if="validationErrors.cargo" class="field-error">{{ validationErrors.cargo }}</p>
+            <p v-if="validationErrors.telefono" class="field-error">
+              {{ validationErrors.telefono }}
+            </p>
 
-            <ion-item>
-              <ion-label position="stacked">Departamento</ion-label>
-              <ion-input v-model="formData.departamento" type="text" :legacy="true"></ion-input>
-            </ion-item>
-            <p v-if="validationErrors.departamento" class="field-error">{{ validationErrors.departamento }}</p>
-
-            <ion-item>
-              <ion-label position="stacked">Telefono</ion-label>
-              <ion-input v-model="formData.telefono" type="tel" :legacy="true"></ion-input>
-            </ion-item>
-            <p v-if="validationErrors.telefono" class="field-error">{{ validationErrors.telefono }}</p>
-
-            <ion-item>
-              <ion-label position="stacked">Descripcion</ion-label>
+            <ion-item lines="none" class="modern-field">
               <ion-textarea
                 v-model="formData.descripcion"
-                rows="3"
-                :legacy="true"
+                rows="4"
+                label="Descripción"
+                label-placement="floating"
                 placeholder="Ejemplo: Encargado de corte y apoyo en inventario"
               ></ion-textarea>
             </ion-item>
-            <p v-if="validationErrors.descripcion" class="field-error">{{ validationErrors.descripcion }}</p>
-          </div>
+            <p v-if="validationErrors.descripcion" class="field-error">
+              {{ validationErrors.descripcion }}
+            </p>
+          </section>
 
-          <div v-if="formError" class="error-message">{{ formError }}</div>
+          <div v-if="formError" class="error-message">
+            {{ formError }}
+          </div>
         </div>
       </ion-content>
+
       <ion-footer class="modal-footer">
         <ion-toolbar>
-          <ion-button expand="block" @click="saveColaborador" :disabled="loading">
-            {{ loading ? 'Guardando...' : isEditing ? 'Actualizar' : 'Guardar' }}
+          <ion-button
+            expand="block"
+            class="modal-primary-action"
+            @click="saveColaborador"
+            :disabled="loading"
+          >
+            {{ loading ? 'Guardando...' : isEditing ? 'Actualizar colaborador' : 'Guardar colaborador' }}
           </ion-button>
         </ion-toolbar>
       </ion-footer>
@@ -221,7 +349,7 @@
     >
       <ion-header>
         <ion-toolbar color="primary">
-          <ion-title>Detalle del Colaborador</ion-title>
+          <ion-title>Detalle del colaborador</ion-title>
           <ion-buttons slot="end">
             <ion-button @click="closeDetailModal" class="close-modal-btn">
               <ion-icon slot="start" :icon="closeOutline"></ion-icon>
@@ -230,72 +358,77 @@
           </ion-buttons>
         </ion-toolbar>
       </ion-header>
+
       <ion-content class="modal-content">
-        <div class="modal-form" v-if="selectedColaborador">
-          <div class="form-card">
-            <ion-item>
-              <ion-label>
-                <h3>Nombre</h3>
-                <p>{{ selectedColaborador.nombre || '-' }}</p>
-              </ion-label>
-            </ion-item>
+        <div v-if="selectedColaborador" class="modal-form">
+          <section class="detail-hero-card">
+            <div>
+              <span class="eyebrow">Colaborador</span>
+              <h2>{{ selectedColaborador.nombre || '-' }}</h2>
+              <p>{{ selectedColaborador.codigoEmpleado || 'Sin código' }}</p>
+            </div>
 
-            <ion-item>
-              <ion-label>
-                <h3>Código</h3>
-                <p>{{ selectedColaborador.codigoEmpleado || '-' }}</p>
-              </ion-label>
-            </ion-item>
+            <span
+              class="ui-chip"
+              :class="selectedColaborador.activo === false ? 'ui-chip--muted' : 'ui-chip--success'"
+            >
+              {{ selectedColaborador.activo === false ? 'Inactivo' : 'Activo' }}
+            </span>
+          </section>
 
-            <ion-item>
-              <ion-label>
-                <h3>Cargo y Departamento</h3>
-                <p>{{ selectedColaborador.cargo || 'Sin cargo' }} · {{ selectedColaborador.departamento || 'Sin departamento' }}</p>
-              </ion-label>
-            </ion-item>
+          <section class="form-card detail-grid">
+            <div class="detail-field">
+              <span>Cargo</span>
+              <strong>{{ selectedColaborador.cargo || 'Sin cargo' }}</strong>
+            </div>
 
-            <ion-item>
-              <ion-label>
-                <h3>Telefono</h3>
-                <p>{{ selectedColaborador.telefono || 'Sin telefono' }}</p>
-              </ion-label>
-            </ion-item>
+            <div class="detail-field">
+              <span>Departamento</span>
+              <strong>{{ selectedColaborador.departamento || 'Sin departamento' }}</strong>
+            </div>
 
-            <ion-item>
-              <ion-label>
-                <h3>Descripcion</h3>
-                <p>{{ selectedColaborador.descripcion || 'Sin descripcion registrada.' }}</p>
-              </ion-label>
-            </ion-item>
-          </div>
+            <div class="detail-field">
+              <span>Teléfono</span>
+              <strong>{{ selectedColaborador.telefono || 'Sin teléfono' }}</strong>
+            </div>
+
+            <div class="detail-field detail-field--wide">
+              <span>Descripción</span>
+              <strong>{{ selectedColaborador.descripcion || 'Sin descripción registrada.' }}</strong>
+            </div>
+          </section>
         </div>
       </ion-content>
-      <ion-footer class="modal-footer" v-if="selectedColaborador">
+
+      <ion-footer v-if="selectedColaborador" class="modal-footer">
         <ion-toolbar>
           <ion-button
             v-if="selectedColaborador.activo !== false"
             expand="block"
             color="warning"
+            class="modal-primary-action"
             @click="inactivateFromDetail"
             :disabled="loading"
           >
-            {{ loading ? 'Procesando...' : 'Volver Inactivo' }}
+            {{ loading ? 'Procesando...' : 'Inactivar colaborador' }}
           </ion-button>
 
           <ion-button
             v-else
             expand="block"
             color="success"
+            class="modal-primary-action"
             @click="activateFromDetail"
             :disabled="loading"
           >
-            {{ loading ? 'Procesando...' : 'Activar Colaborador' }}
+            {{ loading ? 'Procesando...' : 'Activar colaborador' }}
           </ion-button>
         </ion-toolbar>
       </ion-footer>
     </ion-modal>
   </ion-page>
 </template>
+
 
 <script setup>
 import { computed, ref, onMounted } from 'vue'
@@ -654,98 +787,448 @@ onBeforeRouteLeave(() => {
 </script>
 
 <style scoped>
+.collaborators-content {
+  --background: #f5f7fb;
+}
+
 .page-container {
-  padding: 1rem;
+  padding: 0.75rem;
 }
 
-.page-header {
-  margin-bottom: 1.5rem;
-}
-
-.page-header h2 {
-  margin: 0 0 0.35rem;
-}
-
-.subtitle {
-  margin: 0;
-  color: #64748b;
-}
-
-.controls {
-  display: grid;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
+.collaborators-page {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
 }
 
 .modules-trigger {
   --color: #ffffff;
 }
 
-.summary-row {
+.module-hero {
   display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  margin-bottom: 1rem;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 0.7rem;
+  padding: 0.85rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 16px;
+  background: linear-gradient(135deg, #ffffff 0%, #eef7ff 100%);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
 }
 
-.summary-chip {
-  background: #e2e8f0;
-  color: #334155;
-  font-size: 0.82rem;
-  font-weight: 600;
+.hero-copy {
+  min-width: 0;
+}
+
+.eyebrow {
+  display: inline-flex;
+  margin-bottom: 0.18rem;
+  color: #2563eb;
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hero-copy h2,
+.toolbar-copy h3,
+.form-section-heading h3,
+.detail-hero-card h2 {
+  margin: 0;
+  color: #0f172a;
+  font-weight: 850;
+}
+
+.hero-copy h2 {
+  font-size: 1.35rem;
+  line-height: 1.15;
+}
+
+.hero-copy p,
+.toolbar-copy p,
+.form-section-heading p,
+.detail-hero-card p {
+  margin: 0.2rem 0 0;
+  color: #64748b;
+  line-height: 1.35;
+}
+
+.hero-actions {
+  min-width: 180px;
+  display: flex;
+  align-items: center;
+}
+
+.hero-button {
+  width: 100%;
+  min-height: 38px;
+  margin: 0;
+  font-weight: 800;
+  text-transform: none;
+  --border-radius: 12px;
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.overview-card {
+  min-width: 0;
+  padding: 0.58rem 0.62rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
+}
+
+.overview-card--primary {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.overview-label {
+  display: block;
+  overflow: hidden;
+  color: #64748b;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.overview-card strong {
+  display: block;
+  margin-top: 0.18rem;
+  color: #0f172a;
+  font-size: 1.45rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.toolbar-card {
+  display: grid;
+  gap: 0.52rem;
+  padding: 0.68rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 15px;
+  background: #ffffff;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+}
+
+.toolbar-copy {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.toolbar-copy h3 {
+  font-size: 1rem;
+}
+
+.toolbar-copy p {
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.collaborator-searchbar {
+  min-height: 40px;
+  padding: 0;
+  --background: #f8fafc;
+  --box-shadow: none;
+  --border-radius: 12px;
+  --color: #0f172a;
+  --placeholder-color: #94a3b8;
+}
+
+.status-filter-segment {
+  --background: #ffffff;
+  border: 1px solid #dbe3ee;
+  border-radius: 12px;
+  padding: 0.16rem;
+}
+
+.status-filter-segment ion-segment-button {
+  min-height: 34px;
+  --background: transparent;
+  --background-checked: transparent;
+  --indicator-color: #2563eb;
+  --color: #475569;
+  --color-checked: #475569;
+  color: #475569;
+  font-weight: 800;
+  text-transform: none;
+}
+
+.status-filter-segment ion-segment-button::part(native) {
+  color: #475569 !important;
+  background: transparent !important;
+}
+
+.status-filter-segment ion-segment-button.segment-button-checked::part(native) {
+  color: #475569 !important;
+  background: transparent !important;
+  font-weight: 900;
+}
+
+.status-filter-segment ion-segment-button::part(indicator-background) {
+  background: #2563eb;
   border-radius: 999px;
-  padding: 0.35rem 0.7rem;
 }
 
-.summary-chip--active {
+.collaborators-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.54rem;
+  padding: 0 0.02rem 0.7rem;
+  background: transparent;
+}
+
+.collaborator-sliding {
+  overflow: hidden;
+  margin: 0;
+  border-radius: 14px;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.055);
+}
+
+.collaborator-card {
+  --background: #ffffff;
+  --border-radius: 14px;
+  --inner-padding-end: 0;
+  --padding-start: 0;
+  --padding-end: 0;
+}
+
+.collaborator-card::part(native) {
+  min-height: 0;
+  border-radius: 14px;
+}
+
+.collaborator-card-content {
+  width: 100%;
+  min-width: 0;
+  padding: 0.72rem;
+}
+
+.collaborator-topline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.collaborator-title-block {
+  min-width: 0;
+}
+
+.collaborator-title-block h3 {
+  margin: 0;
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 1rem;
+  font-weight: 850;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collaborator-title-block p {
+  margin: 0.18rem 0 0;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.collaborator-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.32rem;
+  margin-top: 0.55rem;
+}
+
+.ui-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0.22rem 0.52rem;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.ui-chip--primary {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.ui-chip--success {
   background: #dcfce7;
   color: #166534;
 }
 
-.summary-chip--inactive {
-  background: #e5e7eb;
-  color: #374151;
+.ui-chip--muted {
+  background: #e2e8f0;
+  color: #475569;
 }
 
-.active {
-  color: #5f8fb8;
+.collaborator-description {
+  margin: 0.58rem 0 0;
+  display: -webkit-box;
+  overflow: hidden;
+  color: #475569;
+  font-size: 0.76rem;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
-.inactive {
-  color: #8ea1b0;
-}
-
-.empty-state {
-  text-align: center;
-  padding: 2rem 1rem;
-  color: #6b7280;
-}
-
-.loading-state {
-  text-align: center;
-  padding: 2rem 1rem;
-  color: #6b7280;
+.collaborator-contact {
+  margin-top: 0.58rem;
+  padding: 0.5rem 0.58rem;
+  border: 1px solid #edf2f7;
+  border-radius: 10px;
+  background: #f8fafc;
   display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
   align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
 }
 
-.modal-form {
+.collaborator-contact span {
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.collaborator-contact strong {
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modern-state {
+  min-height: 150px;
   padding: 1rem;
+  border: 1px dashed #cbd5e1;
+  border-radius: 14px;
+  background: #ffffff;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 0.52rem;
+  color: #64748b;
+  text-align: center;
+}
+
+.modern-state p,
+.modern-state strong {
+  margin: 0;
+}
+
+.empty-state p {
+  margin: 0.2rem 0 0.7rem;
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+.loading-state p {
+  font-weight: 700;
+}
+
+.error-message {
+  padding: 0.68rem;
+  border: 1px solid #fecaca;
+  border-left: 4px solid #b91c1c;
+  border-radius: 10px;
+  background: #fee2e2;
+  color: #b91c1c;
+  font-size: 0.8rem;
+  font-weight: 700;
 }
 
 .modal-content {
-  --background: #f8fafc;
+  --background: #f5f7fb;
 }
 
-.form-card {
-  background: #ffffff;
+.modal-form {
+  padding: 0.78rem;
+}
+
+.form-card,
+.detail-hero-card {
+  margin-bottom: 0.7rem;
+  padding: 0.68rem;
   border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 0.25rem;
-  margin-bottom: 0.9rem;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
+}
+
+.form-section-heading {
+  margin-bottom: 0.5rem;
+}
+
+.form-section-heading h3 {
+  font-size: 0.92rem;
+}
+
+.form-section-heading p {
+  font-size: 0.72rem;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.modern-field {
+  --background: #f8fafc;
+  --border-radius: 11px;
+  --min-height: 54px;
+  --padding-start: 0.5rem;
+  --inner-padding-end: 0.45rem;
+  margin-top: 0.48rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 11px;
+}
+
+.modern-field ion-input,
+.modern-field ion-textarea {
+  --color: #0f172a;
+  --label-color: #64748b;
+  --highlight-color-focused: #2563eb;
+}
+
+.field-error,
+.field-hint {
+  margin: 0.24rem 0 0;
+  padding: 0 0.24rem;
+  font-size: 0.72rem;
+}
+
+.field-error {
+  color: #dc2626;
+  font-weight: 700;
+}
+
+.field-hint {
+  color: #64748b;
 }
 
 .modal-footer {
@@ -753,46 +1236,142 @@ onBeforeRouteLeave(() => {
   border-top: 1px solid #e2e8f0;
 }
 
+.modal-footer ion-toolbar {
+  --background: #ffffff;
+  --padding-start: 0.72rem;
+  --padding-end: 0.72rem;
+  --padding-top: 0.48rem;
+  --padding-bottom: 0.48rem;
+}
+
+.modal-primary-action {
+  min-height: 42px;
+  margin: 0;
+  font-weight: 850;
+  text-transform: none;
+  --border-radius: 12px;
+}
+
+.detail-hero-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  background: linear-gradient(135deg, #ffffff 0%, #eef7ff 100%);
+}
+
+.detail-hero-card h2 {
+  font-size: 1.15rem;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.detail-field {
+  min-width: 0;
+  padding: 0.58rem;
+  border: 1px solid #edf2f7;
+  border-radius: 11px;
+  background: #f8fafc;
+}
+
+.detail-field--wide {
+  grid-column: 1 / -1;
+}
+
+.detail-field span {
+  display: block;
+  margin-bottom: 0.22rem;
+  color: #64748b;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.detail-field strong {
+  display: block;
+  color: #0f172a;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 :global(ion-modal.colaborador-modal) {
-  --width: min(760px, 92vw);
-  --height: min(82vh, 820px);
+  --width: min(760px, 94vw);
+  --height: min(86vh, 820px);
   --border-radius: 16px;
   --backdrop-opacity: 0.45;
 }
 
-@media (max-width: 640px) {
-  :global(ion-modal.colaborador-modal) {
-    --width: 96vw;
-    --height: 90vh;
+@media (max-width: 760px) {
+  .overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
   }
 }
 
-.field-error {
-  margin: 0.25rem 0 0.5rem;
-  color: #dc2626;
-  font-size: 0.85rem;
-  padding: 0 0.75rem;
-}
+@media (max-width: 540px) {
+  .page-container {
+    padding: 0.65rem;
+  }
 
-.field-hint {
-  margin: 0.25rem 0 0.5rem;
-  color: #64748b;
-  font-size: 0.8rem;
-  padding: 0 0.75rem;
-}
+  .collaborators-page {
+    gap: 0.52rem;
+  }
 
-.descripcion-preview {
-  color: #334155;
-  font-style: italic;
-}
+  .module-hero {
+    flex-direction: column;
+    padding: 0.72rem;
+  }
 
-.error-message {
-  background: #fee2e2;
-  border: 1px solid #fecaca;
-  color: #b91c1c;
-  border-radius: 8px;
-  padding: 0.75rem;
-  margin: 0 0 1rem;
-  border-left: 4px solid #b45757;
+  .hero-actions {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .hero-button {
+    width: 100%;
+  }
+
+  .overview-card {
+    padding: 0.52rem;
+  }
+
+  .overview-card strong {
+    font-size: 1.3rem;
+  }
+
+  .toolbar-card {
+    padding: 0.58rem;
+  }
+
+  .collaborator-card-content {
+    padding: 0.62rem;
+  }
+
+  .status-filter-segment ion-segment-button {
+    min-width: 0;
+    font-size: 0.7rem;
+  }
+
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-field--wide {
+    grid-column: auto;
+  }
+
+  :global(ion-modal.colaborador-modal) {
+    --width: 96vw;
+    --height: 92vh;
+  }
 }
 </style>

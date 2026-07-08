@@ -119,22 +119,27 @@
             </ion-item>
           </div>
 
-          <div class="area-filter-panel" aria-label="Filtro de stock por área">
-            <div class="area-filter-copy">
-              <span>Stock mostrado</span>
-              <strong>{{ getSelectedAreaLabel() }}</strong>
-            </div>
-            <ion-segment
-              :value="areaFilter"
-              class="area-filter-segment"
-              @ionChange="areaFilter = $event.detail.value || 'TODAS'"
+          <ion-segment
+            :value="areaFilter"
+            class="area-filter-segment"
+            aria-label="Filtro de stock por área"
+            @ionChange="areaFilter = $event.detail.value || 'TODAS'"
+          >
+            <ion-segment-button
+              value="TODAS"
+              :class="{ 'area-filter-option--selected': areaFilter === 'TODAS' }"
             >
-              <ion-segment-button value="TODAS">Todas</ion-segment-button>
-              <ion-segment-button v-for="area in AREAS_TALLER" :key="area" :value="area">
-                {{ AREA_LABELS[area] }}
-              </ion-segment-button>
-            </ion-segment>
-          </div>
+              Todas
+            </ion-segment-button>
+            <ion-segment-button
+              v-for="area in AREAS_TALLER"
+              :key="area"
+              :value="area"
+              :class="{ 'area-filter-option--selected': areaFilter === area }"
+            >
+              {{ area === 'SEGUNDO_PISO' ? '2º Piso' : AREA_LABELS[area] }}
+            </ion-segment-button>
+          </ion-segment>
         </section>
 
         <div v-if="loading" class="loading-state modern-state">
@@ -235,30 +240,34 @@
         <div class="modal-form">
           <div class="form-card">
           <ion-item>
-            <ion-label position="floating">Nombre</ion-label>
             <ion-input
               v-model="formData.nombre"
               type="text"
-              :legacy="true"
+              label="Nombre"
+              label-placement="floating"
               @ionBlur="setTouched('nombre')"
             ></ion-input>
           </ion-item>
           <p v-if="touched.nombre && nombreError" class="field-error">{{ nombreError }}</p>
 
           <ion-item>
-            <ion-label position="floating">Descripción</ion-label>
-            <ion-textarea v-model="formData.descripcion" rows="3" :legacy="true"></ion-textarea>
+            <ion-textarea
+              v-model="formData.descripcion"
+              rows="3"
+              label="Descripción"
+              label-placement="floating"
+            ></ion-textarea>
           </ion-item>
 
           <div class="barcode-field-container">
             <ion-item>
-              <ion-label position="floating">Código de barras</ion-label>
               <ion-input
                 v-model="formData.codigoBarras"
                 type="text"
+                label="Código de barras"
+                label-placement="floating"
                 readonly
                 disabled
-                :legacy="true"
               ></ion-input>
             </ion-item>
             <div class="barcode-button-group">
@@ -301,7 +310,7 @@
             @click="shareLabelToPrinterApp"
           >
             <ion-icon slot="start" :icon="print"></ion-icon>
-            {{ isPrinting ? 'Generando...' : 'Imprimir / compartir etiqueta' }}
+            {{ isPrinting ? 'Generando...' : 'Imprimir etiqueta' }}
           </ion-button>
           <p v-if="printError" class="field-error">{{ printError }}</p>
           </div>
@@ -309,8 +318,11 @@
           <div class="form-card form-section">
             <label class="section-label">Forma de control del producto</label>
             <ion-item>
-              <ion-label position="stacked">Cómo se controla este producto</ion-label>
-              <ion-select v-model="formData.categoriaControl" placeholder="Selecciona forma de control">
+              <ion-select
+                v-model="formData.categoriaControl"
+                placeholder="Selecciona forma de control"
+                @ionChange="setTouched('categoriaControl')"
+              >
                 <ion-select-option value="UNIDAD">Por pieza</ion-select-option>
                 <ion-select-option value="FRACCIONABLE">Por envase / fraccionable</ion-select-option>
                 <ion-select-option value="HERRAMIENTA">Herramienta retornable</ion-select-option>
@@ -318,6 +330,9 @@
             </ion-item>
             <p class="field-hint">
               Esta opción define cómo se captura el stock y cómo se comporta el producto en salidas o préstamos.
+            </p>
+            <p v-if="touched.categoriaControl && categoriaControlError" class="field-error">
+              {{ categoriaControlError }}
             </p>
 
             <ion-item>
@@ -340,7 +355,7 @@
                   inputmode="numeric"
                   pattern="[0-9]*"
                   class="stepper-input"
-                  :legacy="true"
+                  aria-label="Stock mínimo recomendado"
                   @ionBlur="normalizeStockMinimo"
                 ></ion-input>
                 <ion-button fill="clear" class="stepper-btn" @click="changeStockMinimo(1)">
@@ -356,11 +371,11 @@
 
           <div class="form-card compact-card form-section">
             <label class="section-label">Stock por área</label>
-            <div class="area-stock-grid">
+            <div v-if="formData.categoriaControl" class="area-stock-grid">
               <div v-for="area in AREAS_TALLER" :key="area" class="area-stock-card">
                 <h4>{{ AREA_LABELS[area] }}</h4>
                 <div class="field-stepper-card">
-                  <span>Nuevos</span>
+                  <span>{{ stockPrimaryLabel }}</span>
                   <div class="compact-stepper">
                     <ion-button fill="clear" class="stepper-btn" @click="changeAreaStock(area, 'stock', -1)">
                       <ion-icon slot="icon-only" :icon="remove"></ion-icon>
@@ -371,7 +386,7 @@
                       inputmode="numeric"
                       pattern="[0-9]*"
                       class="stepper-input"
-                      :legacy="true"
+                      :aria-label="`${stockPrimaryLabel} en ${AREA_LABELS[area]}`"
                       @ionBlur="normalizeAreaStock(area, 'stock')"
                     ></ion-input>
                     <ion-button fill="clear" class="stepper-btn" @click="changeAreaStock(area, 'stock', 1)">
@@ -380,7 +395,7 @@
                   </div>
                 </div>
                 <div v-if="formData.categoriaControl === 'FRACCIONABLE'" class="field-stepper-card">
-                  <span>Empezados</span>
+                  <span>Envases empezados</span>
                   <div class="compact-stepper">
                     <ion-button fill="clear" class="stepper-btn" @click="changeAreaStock(area, 'stockEmpezado', -1)">
                       <ion-icon slot="icon-only" :icon="remove"></ion-icon>
@@ -391,7 +406,7 @@
                       inputmode="numeric"
                       pattern="[0-9]*"
                       class="stepper-input"
-                      :legacy="true"
+                      :aria-label="`Envases empezados en ${AREA_LABELS[area]}`"
                       @ionBlur="normalizeAreaStock(area, 'stockEmpezado')"
                     ></ion-input>
                     <ion-button fill="clear" class="stepper-btn" @click="changeAreaStock(area, 'stockEmpezado', 1)">
@@ -401,19 +416,22 @@
                 </div>
               </div>
             </div>
+            <p v-else class="field-hint">
+              Selecciona primero la forma de control para capturar el stock de cada área.
+            </p>
             <p v-if="touched.stock && stockError" class="field-error">{{ stockError }}</p>
             <p v-if="touched.stockEmpezado && stockEmpezadoError" class="field-error">{{ stockEmpezadoError }}</p>
           </div>
 
           <div class="form-card compact-card">
             <ion-item>
-              <ion-label position="floating">Precio (opcional)</ion-label>
               <ion-input
                 v-model.number="formData.precio"
                 type="number"
                 min="0"
                 step="0.01"
-                :legacy="true"
+                label="Precio (opcional)"
+                label-placement="floating"
                 @ionBlur="setTouched('precio')"
               ></ion-input>
             </ion-item>
@@ -560,7 +578,7 @@
                     inputmode="numeric"
                     pattern="[0-9]*"
                     class="stepper-input"
-                    :legacy="true"
+                    aria-label="Cantidad del ajuste de stock"
                     @ionBlur="normalizeQuickCantidad"
                   ></ion-input>
                   <ion-button fill="clear" class="stepper-btn" @click="changeQuickCantidad(1)">
@@ -654,6 +672,7 @@ const printToastMessage = ref('')
 const printToastColor = ref('success')
 const touched = ref({
   nombre: false,
+  categoriaControl: false,
   stock: false,
   stockEmpezado: false,
   stockMinimo: false,
@@ -702,7 +721,7 @@ const activeAreaFilter = computed(() => areaFilter.value)
 const formData = ref({
   nombre: '',
   descripcion: '',
-  categoriaControl: 'UNIDAD',
+  categoriaControl: '',
   generaAdeudo: true,
   stockMinimo: 0,
   stock: 0,
@@ -712,48 +731,490 @@ const formData = ref({
   codigoBarras: ''
 })
 
-const LABEL_WIDTH_MM = 50.8
-const LABEL_HEIGHT_MM = 25.4
-const LABEL_WIDTH_PX = 406
-const LABEL_HEIGHT_PX = 203
+const LABEL_WIDTH_MM = 52
+const LABEL_HEIGHT_MM = 25
+const LABEL_WIDTH_PX = 416
+const LABEL_HEIGHT_PX = 200
 const LABEL_RENDER_SCALE = 2
+
+const generateBarcode = () => {
+  // Codigo numerico de 8 digitos para mejorar lectura en escaner termico.
+  // Validar unicidad contra codigos existentes en BD y en sesion actual.
+  const existingCodes = new Set([
+    ...sessionGeneratedCodes.value,
+    ...products.value.map(p => p.codigoBarras).filter(Boolean)
+  ])
+
+  let codigo = ''
+  let attempts = 0
+  const maxAttempts = 20
+
+  while (attempts < maxAttempts) {
+    codigo = Math.floor(10000000 + Math.random() * 90000000).toString()
+    if (!existingCodes.has(codigo)) {
+      sessionGeneratedCodes.value.add(codigo)
+      return codigo
+    }
+    attempts++
+  }
+
+  // Si fallamos 20 intentos, usar timestamp como fallback para garantizar unicidad
+  codigo = Math.floor(10000000 + (Date.now() % 90000000)).toString()
+  sessionGeneratedCodes.value.add(codigo)
+  return codigo
+}
+
+const resetForm = () => {
+  modalError.value = ''
+  saveSuccess.value = false
+  printError.value = ''
+  barcodeError.value = ''
+  touched.value = {
+    nombre: false,
+    categoriaControl: false,
+    stock: false,
+    stockEmpezado: false,
+    stockMinimo: false,
+    precio: false
+  }
+  formData.value = {
+    nombre: '',
+    descripcion: '',
+    categoriaControl: '',
+    generaAdeudo: true,
+    stockMinimo: 0,
+    stock: 0,
+    stockEmpezado: 0,
+    stockPorArea: createEmptyStockPorArea(),
+    precio: null,
+    codigoBarras: ''
+  }
+}
+
+const setTouched = (field) => {
+  touched.value[field] = true
+}
+
+const normalizeIntegerValue = (value, min = 0, max = Number.POSITIVE_INFINITY) => {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return min
+  return Math.min(max, Math.max(min, Math.trunc(number)))
+}
+
+const normalizeAreaStock = (area, field) => {
+  const areaKey = normalizeAreaKey(area)
+  if (!formData.value.stockPorArea?.[areaKey]) return
+  formData.value.stockPorArea[areaKey][field] = normalizeIntegerValue(formData.value.stockPorArea[areaKey][field], 0)
+  setTouched(field === 'stockEmpezado' ? 'stockEmpezado' : 'stock')
+}
+
+const changeAreaStock = (area, field, delta) => {
+  const areaKey = normalizeAreaKey(area)
+  if (!formData.value.stockPorArea?.[areaKey]) return
+  formData.value.stockPorArea[areaKey][field] = Number(formData.value.stockPorArea[areaKey][field] || 0) + Number(delta || 0)
+  normalizeAreaStock(areaKey, field)
+}
+
+const normalizeStockMinimo = () => {
+  formData.value.stockMinimo = normalizeIntegerValue(formData.value.stockMinimo, 0)
+  setTouched('stockMinimo')
+}
+
+const changeStockMinimo = (delta) => {
+  formData.value.stockMinimo = Number(formData.value.stockMinimo || 0) + Number(delta || 0)
+  normalizeStockMinimo()
+}
+
+const normalizeQuickCantidad = () => {
+  quickCantidad.value = normalizeIntegerValue(quickCantidad.value, 1)
+}
+
+const changeQuickCantidad = (delta) => {
+  quickCantidad.value = Number(quickCantidad.value || 0) + Number(delta || 0)
+  normalizeQuickCantidad()
+}
+
+const nombreError = computed(() => {
+  return formData.value.nombre?.trim() ? '' : 'El nombre del producto es obligatorio.'
+})
+
+const stockError = computed(() => {
+  for (const area of AREAS_TALLER) {
+    const stock = Number(formData.value.stockPorArea?.[area]?.stock)
+    if (!Number.isFinite(stock)) return `El stock de ${AREA_LABELS[area]} debe ser un numero.`
+    if (!Number.isInteger(stock) || stock < 0) return `El stock de ${AREA_LABELS[area]} debe ser un entero mayor o igual a 0.`
+  }
+  return ''
+})
+
+const precioError = computed(() => {
+  const precioRaw = formData.value.precio
+  if (precioRaw === '' || precioRaw === null || precioRaw === undefined) {
+    return ''
+  }
+  const precio = Number(precioRaw)
+  if (!Number.isFinite(precio)) {
+    return 'El precio debe ser un numero valido.'
+  }
+  if (precio < 0) {
+    return 'El precio no puede ser negativo.'
+  }
+  return ''
+})
+
+const categoriaControlError = computed(() => {
+  const categoria = String(formData.value.categoriaControl || '').trim().toUpperCase()
+  if (!categoria) return 'Selecciona una forma de control para el producto.'
+  if (!['UNIDAD', 'FRACCIONABLE', 'HERRAMIENTA'].includes(categoria)) {
+    return 'La forma de control seleccionada no es válida.'
+  }
+  return ''
+})
+
+const stockPrimaryLabel = computed(() => {
+  if (formData.value.categoriaControl === 'FRACCIONABLE') return 'Envases nuevos'
+  if (formData.value.categoriaControl === 'HERRAMIENTA') return 'Herramientas disponibles'
+  if (formData.value.categoriaControl === 'UNIDAD') return 'Piezas disponibles'
+  return 'Cantidad disponible'
+})
+
+const stockEmpezadoError = computed(() => {
+  if (formData.value.categoriaControl !== 'FRACCIONABLE') return ''
+  for (const area of AREAS_TALLER) {
+    const stock = Number(formData.value.stockPorArea?.[area]?.stockEmpezado)
+    if (!Number.isFinite(stock)) return `El stock empezado de ${AREA_LABELS[area]} debe ser un numero.`
+    if (!Number.isInteger(stock) || stock < 0) return `El stock empezado de ${AREA_LABELS[area]} debe ser un entero mayor o igual a 0.`
+  }
+  return ''
+})
+
+const stockMinimoError = computed(() => {
+  const minimo = Number(formData.value.stockMinimo)
+  if (!Number.isFinite(minimo)) return 'El mínimo recomendado debe ser un número.'
+  if (!Number.isInteger(minimo) || minimo < 0) return 'El mínimo recomendado debe ser un entero mayor o igual a 0.'
+  return ''
+})
+
+const isFormValid = computed(() => {
+  return !nombreError.value && !categoriaControlError.value && !stockError.value && !precioError.value && !stockEmpezadoError.value && !stockMinimoError.value
+})
+
+const saveButtonColor = computed(() => {
+  return saveSuccess.value ? 'success' : 'primary'
+})
+
+const saveButtonLabelShort = computed(() => {
+  if (saveSuccess.value) {
+    return 'Guardado'
+  }
+  return loading.value ? 'Guardando...' : 'Guardar'
+})
+
+const saveButtonLabelFull = computed(() => {
+  if (saveSuccess.value) {
+    return 'Guardado correctamente'
+  }
+  return loading.value ? 'Guardando...' : 'Guardar Producto'
+})
+
+const calculateLoanedStock = (prestamosActivos = []) => {
+  const map = {}
+
+  prestamosActivos.forEach((prestamo) => {
+    if (!['abierto', 'activo'].includes(prestamo.estado)) {
+      return
+    }
+
+    ;(prestamo.detalles || []).forEach((item) => {
+      const total = Number(item.cantidad || 0)
+      const devuelto = Number(item.cantidadDevuelta || 0)
+      const consumido = Number(item.cantidadConsumida || 0)
+      const devueltoComoEmpezado = Number(item.cantidadDevueltaComoEmpezado || 0)
+      const adeudado = Number(item.cantidadAdeudada || 0)
+      const pendiente = Math.max(0, total - devuelto - consumido - devueltoComoEmpezado - adeudado)
+
+      if (!item.productoId || pendiente <= 0) {
+        return
+      }
+
+      const area = normalizeAreaKey(item.areaOrigen)
+      map[item.productoId] = map[item.productoId] || {}
+      map[item.productoId][area] = (map[item.productoId][area] || 0) + pendiente
+    })
+  })
+
+  loanedStockMap.value = map
+}
+
+const getLoanedStock = (productId, area = 'TODAS') => {
+  const byArea = loanedStockMap.value[productId] || {}
+  if (area === 'TODAS') return Object.values(byArea).reduce((sum, value) => sum + Number(value || 0), 0)
+  return Number(byArea[normalizeAreaKey(area)] || 0)
+}
+
+const getStockNuevo = (product, area = 'TODAS') => {
+  const stockPorArea = normalizeStockPorAreaLocal(product)
+  if (area === 'TODAS') return AREAS_TALLER.reduce((sum, key) => sum + Number(stockPorArea[key]?.stock || 0), 0)
+  return Number(stockPorArea[normalizeAreaKey(area)]?.stock || 0)
+}
+
+const getStockEmpezado = (product, area = 'TODAS') => {
+  if (product.categoriaControl !== 'FRACCIONABLE') return 0
+  const stockPorArea = normalizeStockPorAreaLocal(product)
+  if (area === 'TODAS') return AREAS_TALLER.reduce((sum, key) => sum + Number(stockPorArea[key]?.stockEmpezado || 0), 0)
+  return Number(stockPorArea[normalizeAreaKey(area)]?.stockEmpezado || 0)
+}
+
+const getRealStock = (product, area = 'TODAS') => getStockNuevo(product, area)
+const getAvailableStock = (product, area = 'TODAS') => getStockNuevo(product, area) + getStockEmpezado(product, area)
+const getTotalStock = (product, area = 'TODAS') => getAvailableStock(product, area) + getLoanedStock(product.id, area)
+const getStockMinimo = (product) => normalizeIntegerValue(product?.stockMinimo, 0)
+const getSelectedAreaLabel = () => areaFilter.value === 'TODAS' ? 'Todas las áreas' : AREA_LABELS[normalizeAreaKey(areaFilter.value)]
+
+const getControlLabel = (product) => {
+  const categoria = String(product?.categoriaControl || 'UNIDAD').toUpperCase()
+  if (categoria === 'FRACCIONABLE') return 'Por envase / fraccionable'
+  if (categoria === 'HERRAMIENTA') return 'Herramienta retornable'
+  return 'Por pieza'
+}
+
+const isLowStock = (product, area = activeAreaFilter.value) => {
+  const available = getAvailableStock(product, area)
+  const minimo = getStockMinimo(product)
+  return minimo > 0 && available > 0 && available <= minimo
+}
+
+const getStockStatusLabel = (product) => {
+  const available = getAvailableStock(product, activeAreaFilter.value)
+  if (available <= 0) return 'Sin stock'
+  return isLowStock(product) ? 'Stock bajo' : 'Con stock'
+}
+
+const getStockStatusClass = (product) => {
+  const available = getAvailableStock(product, activeAreaFilter.value)
+  if (available <= 0) return 'ui-chip--danger'
+  return isLowStock(product) ? 'ui-chip--warning' : 'ui-chip--success'
+}
+
+const productsSummary = computed(() => {
+  const list = products.value || []
+  return {
+    total: list.length,
+    conStock: list.filter((product) => getAvailableStock(product) > 0).length,
+    stockBajo: list.filter((product) => getAvailableStock(product) <= 0 || isLowStock(product, 'TODAS')).length,
+    prestados: list.reduce((acc, product) => acc + getLoanedStock(product.id), 0)
+  }
+})
+
+const filteredProducts = computed(() => {
+  const query = searchTerm.value.toLowerCase().trim()
+  const baseList = products.value.filter((product) => {
+    const nombre = (product.nombre || '').toLowerCase()
+    const codigo = (product.codigoBarras || '').toLowerCase()
+    const matchesSearch = !query || nombre.includes(query) || codigo.includes(query)
+    const matchesArea = areaFilter.value === 'TODAS' || getAvailableStock(product, areaFilter.value) > 0 || getLoanedStock(product.id, areaFilter.value) > 0
+    return matchesSearch && matchesArea
+  })
+
+  const sortedList = [...baseList]
+  const normalizeName = (product) => String(product.nombre || '').trim().toLocaleLowerCase('es-MX')
+
+  sortedList.sort((a, b) => {
+    if (sortMode.value === 'name-desc') {
+      return normalizeName(b).localeCompare(normalizeName(a), 'es-MX', { sensitivity: 'base' })
+    }
+
+    if (sortMode.value === 'stock-desc') {
+      const stockDiff = getTotalStock(b, activeAreaFilter.value) - getTotalStock(a, activeAreaFilter.value)
+      return stockDiff || normalizeName(a).localeCompare(normalizeName(b), 'es-MX', { sensitivity: 'base' })
+    }
+
+    if (sortMode.value === 'stock-asc') {
+      const stockDiff = getTotalStock(a, activeAreaFilter.value) - getTotalStock(b, activeAreaFilter.value)
+      return stockDiff || normalizeName(a).localeCompare(normalizeName(b), 'es-MX', { sensitivity: 'base' })
+    }
+
+    return normalizeName(a).localeCompare(normalizeName(b), 'es-MX', { sensitivity: 'base' })
+  })
+
+  return sortedList
+})
+
+const isBarcodeUnique = (barcode) => {
+  const trimmed = String(barcode || '').trim()
+  if (!trimmed) return false
+  
+  // Validar contra códigos existentes en BD y en sesión actual
+  const existingCodes = new Set([
+    ...sessionGeneratedCodes.value,
+    ...products.value.map(p => p.codigoBarras).filter(Boolean)
+  ])
+  
+  return !existingCodes.has(trimmed)
+}
+
+const generateNewBarcode = () => {
+  formData.value.codigoBarras = generateBarcode()
+  barcodeError.value = ''
+}
+
+const openBarcodeScanner = async () => {
+  barcodeError.value = ''
+  if (isScanning.value || isModalScannerBusy.value) return
+  if (isEditing.value) return // No permitir escaneo al editar
+
+  if (!Capacitor?.isNativePlatform?.()) {
+    barcodeError.value = 'El escaneo solo funciona en la app instalada.'
+    return
+  }
+
+  isModalScannerBusy.value = true
+  try {
+    const { supported } = await BarcodeScanner.isSupported()
+    if (!supported) {
+      barcodeError.value = 'Este dispositivo no soporta escaneo de códigos.'
+      return
+    }
+
+    const permissions = await BarcodeScanner.requestPermissions()
+    if (permissions.camera !== 'granted') {
+      barcodeError.value = 'Necesitas permitir acceso a la cámara.'
+      return
+    }
+
+    if (Capacitor.getPlatform() === 'android') {
+      const moduleStatus = await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable()
+      if (!moduleStatus.available) {
+        barcodeError.value = 'Instalando módulo de escaneo...'
+        await BarcodeScanner.installGoogleBarcodeScannerModule()
+        
+        // Esperar a que se instale
+        const started = Date.now()
+        while (Date.now() - started < MODULE_INSTALL_TIMEOUT_MS) {
+          const status = await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable()
+          if (status.available) {
+            barcodeError.value = ''
+            break
+          }
+          await new Promise((r) => setTimeout(r, MODULE_INSTALL_POLL_MS))
+        }
+      }
+    }
+
+    isScanning.value = true
+    let scanTimeout = false
+    let scannerTimeoutId = setTimeout(() => {
+      scanTimeout = true
+      BarcodeScanner.stopScan().catch(() => {})
+      barcodeError.value = 'Tiempo de escaneo agotado (15s).'
+      isScanning.value = false
+    }, SCANNER_TIMEOUT_MS)
+
+    const result = await BarcodeScanner.scan({
+      formats: [
+        BarcodeFormat.Code128,
+        BarcodeFormat.Code39,
+        BarcodeFormat.Ean13,
+        BarcodeFormat.Ean8,
+        BarcodeFormat.UpcA,
+        BarcodeFormat.UpcE,
+        BarcodeFormat.Itf
+      ]
+    })
+
+    if (scannerTimeoutId) {
+      clearTimeout(scannerTimeoutId)
+      scannerTimeoutId = null
+    }
+
+    if (scanTimeout) return
+
+    const first = result?.barcodes?.[0]
+    const scannedCode = (first?.rawValue || first?.displayValue || '').trim()
+    
+    if (!scannedCode) {
+      barcodeError.value = 'No se detectó ningún código.'
+      return
+    }
+
+    // Validar que el código sea único
+    if (!isBarcodeUnique(scannedCode)) {
+      barcodeError.value = `El código de barras ${scannedCode} ya existe.`
+      return
+    }
+
+    formData.value.codigoBarras = scannedCode
+    barcodeError.value = ''
+  } catch (err) {
+    const msg = err?.message || ''
+    if (!msg.includes('cancel') && !msg.includes('dismiss') && !msg.includes('timeout')) {
+      barcodeError.value = err?.message || 'No se pudo iniciar el escáner.'
+    }
+  } finally {
+    isScanning.value = false
+    isModalScannerBusy.value = false
+    await new Promise((r) => setTimeout(r, DEBOUNCE_DELAY_MS))
+  }
+}
+
+const refreshProductsAndLoanedStock = async () => {
+  try {
+    await migrateLegacyProductsToStockPorArea()
+  } catch (migrationErr) {
+    console.warn('No se pudo ejecutar la migracion automatica de stock por area:', migrationErr)
+  }
+  const [allProducts, allPrestamos] = await Promise.all([getProducts(), getPrestamos()])
+  calculateLoanedStock(allPrestamos)
+  return allProducts
+}
+
+const openModulesMenu = () => {
+  isModulesMenuOpen.value = true
+}
+
+const navigateTo = async (path) => {
+  isModulesMenuOpen.value = false
+  await router.push(path)
+}
+
+const openNewProductModal = () => {
+  isEditing.value = false
+  currentProductId.value = null
+  resetForm()
+  formData.value.codigoBarras = generateBarcode()
+  barcodeError.value = ''
+  isModalOpen.value = true
+}
+
+const openEditProductModal = (product) => {
+  isEditing.value = true
+  currentProductId.value = product.id
+  printError.value = ''
+  formData.value = {
+    nombre: product.nombre,
+    descripcion: product.descripcion || '',
+    categoriaControl: product.categoriaControl || 'UNIDAD',
+    generaAdeudo: product.generaAdeudo !== false,
+    stockMinimo: normalizeIntegerValue(product.stockMinimo, 0),
+    stock: Number.isFinite(Number(product.stock)) ? Number(product.stock) : 0,
+    stockEmpezado: Number.isFinite(Number(product.stockEmpezado)) ? Number(product.stockEmpezado) : 0,
+    stockPorArea: normalizeStockPorAreaLocal(product),
+    precio: product.precio || null,
+    codigoBarras: product.codigoBarras || ''
+  }
+  isModalOpen.value = true
+}
+
+const closeModal = () => {
+  isModalOpen.value = false
+  showDeleteConfirm.value = false
+  resetForm()
+}
 
 const safeLabelFileName = (code) => String(code || 'etiqueta')
   .trim()
   .replace(/[^a-zA-Z0-9_-]+/g, '-')
   .replace(/^-+|-+$/g, '') || 'etiqueta'
-
-const mmToPdfPoints = (mm) => (Number(mm || 0) / 25.4) * 72
-
-const buildPdfBase64WithImage = (jpegBase64, imageWidth, imageHeight) => {
-  const pageWidth = mmToPdfPoints(LABEL_WIDTH_MM)
-  const pageHeight = mmToPdfPoints(LABEL_HEIGHT_MM)
-  const imageBinary = atob(jpegBase64)
-  const content = `q\n${pageWidth.toFixed(2)} 0 0 ${pageHeight.toFixed(2)} 0 0 cm\n/Im1 Do\nQ\n`
-  const objects = [
-    '<< /Type /Catalog /Pages 2 0 R >>',
-    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth.toFixed(2)} ${pageHeight.toFixed(2)}] /Resources << /XObject << /Im1 5 0 R >> >> /Contents 4 0 R >>`,
-    `<< /Length ${content.length} >>\nstream\n${content}endstream`,
-    `<< /Type /XObject /Subtype /Image /Width ${imageWidth} /Height ${imageHeight} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imageBinary.length} >>\nstream\n${imageBinary}\nendstream`
-  ]
-
-  let pdf = '%PDF-1.4\n%\xFF\xFF\xFF\xFF\n'
-  const offsets = [0]
-  objects.forEach((object, index) => {
-    offsets[index + 1] = pdf.length
-    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`
-  })
-
-  const xrefOffset = pdf.length
-  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`
-  for (let i = 1; i <= objects.length; i += 1) {
-    pdf += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`
-  }
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`
-
-  return btoa(pdf)
-}
 
 const buildLabelDataUrl = (code, mimeType = 'image/png') => {
   const canvas = document.createElement('canvas')
@@ -767,39 +1228,89 @@ const buildLabelDataUrl = (code, mimeType = 'image/png') => {
 
   const barcodeCanvas = document.createElement('canvas')
   barcodeCanvas.width = canvas.width
-  barcodeCanvas.height = Math.round(canvas.height * 0.72)
-  const barcodeCtx = barcodeCanvas.getContext('2d')
+  barcodeCanvas.height = canvas.height
+  const barcodeCtx = barcodeCanvas.getContext('2d', { willReadFrequently: true })
   if (!barcodeCtx) throw new Error('No se pudo crear el lienzo del codigo de barras.')
 
   barcodeCtx.fillStyle = '#ffffff'
   barcodeCtx.fillRect(0, 0, barcodeCanvas.width, barcodeCanvas.height)
 
-  JsBarcode(barcodeCanvas, code, {
+  const trimmedCode = String(code || '').trim()
+  const codeLength = trimmedCode.length
+  const barcodeWidth = codeLength <= 8
+    ? 4.2
+    : codeLength <= 12
+      ? 3.2
+      : codeLength <= 18
+        ? 2.6
+        : codeLength <= 24
+          ? 2.1
+          : 1.7
+
+  JsBarcode(barcodeCanvas, trimmedCode, {
     format: 'CODE128',
     displayValue: false,
-    marginLeft: 24,
-    marginRight: 24,
-    marginTop: 8,
-    marginBottom: 8,
-    height: Math.round(barcodeCanvas.height * 0.82),
-    width: 2.2,
+    margin: 0,
+    marginLeft: 0,
+    marginRight: 0,
+    marginTop: 0,
+    marginBottom: 0,
+    height: Math.round(barcodeCanvas.height * 0.96),
+    width: barcodeWidth,
     lineColor: '#000000',
     background: '#ffffff'
   })
 
+  const sourceImageData = barcodeCtx.getImageData(0, 0, barcodeCanvas.width, barcodeCanvas.height)
+  const sourceData = sourceImageData.data
+  let minX = barcodeCanvas.width
+  let minY = barcodeCanvas.height
+  let maxX = -1
+  let maxY = -1
+
+  for (let y = 0; y < barcodeCanvas.height; y += 1) {
+    for (let x = 0; x < barcodeCanvas.width; x += 1) {
+      const index = (y * barcodeCanvas.width + x) * 4
+      const luminance = 0.299 * sourceData[index] + 0.587 * sourceData[index + 1] + 0.114 * sourceData[index + 2]
+      if (luminance < 245) {
+        if (x < minX) minX = x
+        if (y < minY) minY = y
+        if (x > maxX) maxX = x
+        if (y > maxY) maxY = y
+      }
+    }
+  }
+
+  if (maxX < minX || maxY < minY) {
+    minX = 0
+    minY = 0
+    maxX = barcodeCanvas.width - 1
+    maxY = barcodeCanvas.height - 1
+  }
+
+  const sourceWidth = Math.max(1, maxX - minX + 1)
+  const sourceHeight = Math.max(1, maxY - minY + 1)
+  const pxPerMmX = canvas.width / LABEL_WIDTH_MM
+  const pxPerMmY = canvas.height / LABEL_HEIGHT_MM
+  const quietMarginX = Math.round(pxPerMmX * 1.6)
+  const quietMarginTop = Math.round(pxPerMmY * 3.0)
+  const quietMarginBottom = Math.round(pxPerMmY * 2.0)
+  const targetX = quietMarginX
+  const targetY = quietMarginTop
+  const targetWidth = canvas.width - quietMarginX * 2
+  const targetHeight = canvas.height - quietMarginTop - quietMarginBottom
+
   ctx.imageSmoothingEnabled = false
-  const drawHeight = Math.round(canvas.height * 0.72)
-  const drawTop = Math.round((canvas.height - drawHeight) / 2)
   ctx.drawImage(
     barcodeCanvas,
-    0,
-    0,
-    barcodeCanvas.width,
-    barcodeCanvas.height,
-    0,
-    drawTop,
-    canvas.width,
-    drawHeight
+    minX,
+    minY,
+    sourceWidth,
+    sourceHeight,
+    targetX,
+    targetY,
+    targetWidth,
+    targetHeight
   )
 
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
@@ -817,21 +1328,185 @@ const buildLabelDataUrl = (code, mimeType = 'image/png') => {
   return canvas.toDataURL(mimeType, 1)
 }
 
-const buildLabelPdfFileUri = async (code) => {
-  const jpegDataUrl = buildLabelDataUrl(code, 'image/jpeg')
-  const jpegBase64 = jpegDataUrl.split(',')[1]
-  if (!jpegBase64) throw new Error('No se pudo generar el PDF de impresión.')
+const buildBarcodeSvgMarkup = (code) => {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  const trimmedCode = String(code || '').trim()
+  const codeLength = trimmedCode.length
+  const barcodeWidth = codeLength <= 8
+    ? 4.2
+    : codeLength <= 12
+      ? 3.2
+      : codeLength <= 18
+        ? 2.6
+        : codeLength <= 24
+          ? 2.1
+          : 1.7
 
-  const pdfBase64 = buildPdfBase64WithImage(
-    jpegBase64,
-    LABEL_WIDTH_PX * LABEL_RENDER_SCALE,
-    LABEL_HEIGHT_PX * LABEL_RENDER_SCALE
-  )
+  JsBarcode(svg, trimmedCode, {
+    format: 'CODE128',
+    displayValue: false,
+    margin: 0,
+    marginLeft: 0,
+    marginRight: 0,
+    marginTop: 0,
+    marginBottom: 0,
+    height: 220,
+    width: barcodeWidth,
+    lineColor: '#000000',
+    background: '#ffffff'
+  })
 
-  const fileName = `etiqueta-${safeLabelFileName(code)}-2x1.pdf`
+  svg.setAttribute('preserveAspectRatio', 'none')
+  svg.setAttribute('shape-rendering', 'crispEdges')
+  svg.setAttribute('focusable', 'false')
+  svg.setAttribute('aria-hidden', 'true')
+
+  return new XMLSerializer().serializeToString(svg)
+}
+
+const escapeHtml = (value) => String(value || '').replace(/[&<>"']/g, (char) => ({
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;'
+}[char]))
+
+const printLabelInBrowser = (code) => {
+  const svgMarkup = buildBarcodeSvgMarkup(code)
+  const printWindow = window.open('', '_blank', 'width=520,height=360')
+  if (!printWindow) {
+    throw new Error('El navegador bloqueó la ventana de impresión. Permite ventanas emergentes para imprimir etiquetas.')
+  }
+
+  const safeCode = escapeHtml(code)
+  const labelWidth = `${LABEL_WIDTH_MM}mm`
+  const labelHeight = `${LABEL_HEIGHT_MM}mm`
+  printWindow.document.open()
+  printWindow.document.write(`<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Etiqueta ${safeCode}</title>
+  <style>
+    @page {
+      size: ${labelWidth} ${labelHeight};
+      margin: 0;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    html,
+    body {
+      width: ${labelWidth};
+      min-width: ${labelWidth};
+      max-width: ${labelWidth};
+      height: ${labelHeight};
+      min-height: ${labelHeight};
+      max-height: ${labelHeight};
+      margin: 0 !important;
+      padding: 0 !important;
+      overflow: hidden !important;
+      background: #ffffff;
+    }
+
+    body {
+      position: relative;
+    }
+
+    .label {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: ${labelWidth};
+      min-width: ${labelWidth};
+      max-width: ${labelWidth};
+      height: ${labelHeight};
+      min-height: ${labelHeight};
+      max-height: ${labelHeight};
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #ffffff;
+      page-break-after: avoid;
+      break-after: avoid;
+    }
+
+    .barcode-safe-area {
+      position: absolute;
+      left: 2mm;
+      top: 3.2mm;
+      width: calc(${labelWidth} - 4mm);
+      height: calc(${labelHeight} - 5.8mm);
+      overflow: hidden;
+      background: #ffffff;
+    }
+
+    .barcode-safe-area svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+      max-width: none;
+      max-height: none;
+      shape-rendering: crispEdges;
+    }
+
+    .barcode-safe-area svg * {
+      shape-rendering: crispEdges;
+    }
+
+    @media screen {
+      body {
+        outline: 1px dashed #94a3b8;
+      }
+    }
+
+    @media print {
+      html,
+      body,
+      .label {
+        width: ${labelWidth} !important;
+        height: ${labelHeight} !important;
+      }
+
+      .barcode-safe-area {
+        left: 2mm !important;
+        top: 3.2mm !important;
+        width: calc(${labelWidth} - 4mm) !important;
+        height: calc(${labelHeight} - 5.8mm) !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="label">
+    <div class="barcode-safe-area">${svgMarkup}</div>
+  </div>
+  <script>
+    const runPrint = () => {
+      window.focus();
+      window.print();
+    };
+    window.addEventListener('load', () => setTimeout(runPrint, 350));
+  <\/script>
+</body>
+</html>`)
+  printWindow.document.close()
+}
+
+const buildLabelPngFileUri = async (code) => {
+  const pngDataUrl = buildLabelDataUrl(code, 'image/png')
+  const pngBase64 = pngDataUrl.split(',')[1]
+  if (!pngBase64) throw new Error('No se pudo generar la imagen de impresión.')
+
+  const fileName = `etiqueta-${safeLabelFileName(code)}-52x25.png`
   const result = await Filesystem.writeFile({
     path: fileName,
-    data: pdfBase64,
+    data: pngBase64,
     directory: Directory.Cache,
     recursive: true
   })
@@ -852,18 +1527,32 @@ const shareLabelToPrinterApp = async () => {
   }
 
   if (!Capacitor?.isNativePlatform?.()) {
-    printError.value = 'La impresion solo funciona en la app instalada.'
+    try {
+      isPrinting.value = true
+      printLabelInBrowser(barcode)
+      printToastMessage.value = `Abriendo diálogo de impresión - ${barcode}`
+      printToastColor.value = 'success'
+      showPrintToast.value = true
+    } catch (err) {
+      const errorMsg = err?.message || 'No se pudo abrir la impresión del navegador.'
+      printError.value = errorMsg
+      printToastMessage.value = errorMsg
+      printToastColor.value = 'danger'
+      showPrintToast.value = true
+    } finally {
+      isPrinting.value = false
+    }
     return
   }
 
   try {
     isPrinting.value = true
-    const fileUri = await buildLabelPdfFileUri(barcode)
+    const fileUri = await buildLabelPngFileUri(barcode)
     await Share.share({
       title: 'Etiqueta de producto',
-      text: barcode,
+      text: `Etiqueta ${barcode}. En PC se imprime con el diálogo normal; en móvil se comparte como imagen.`,
       files: [fileUri],
-      dialogTitle: 'Compartir etiqueta con app de impresión'
+      dialogTitle: 'Compartir imagen de etiqueta con app de impresión'
     })
 
     printToastMessage.value = `Etiqueta lista para imprimir - ${barcode}`
@@ -1092,11 +1781,7 @@ const showSaveToastFn = async (message) => {
 const normalizeProductPayload = () => {
   const nombre = formData.value.nombre?.trim() || ''
   const descripcion = formData.value.descripcion?.trim() || ''
-  let categoriaControl = String(formData.value.categoriaControl || 'UNIDAD').trim().toUpperCase()
-
-  if (!['UNIDAD', 'FRACCIONABLE', 'HERRAMIENTA'].includes(categoriaControl)) {
-    categoriaControl = 'UNIDAD'
-  }
+  const categoriaControl = String(formData.value.categoriaControl || '').trim().toUpperCase()
 
   // Compatibilidad interna: el usuario ya no captura tipo de producto.
   const tipo = categoriaControl === 'HERRAMIENTA' ? 'HERRAMIENTA' : 'RECURSO'
@@ -1136,6 +1821,7 @@ const saveProduct = async () => {
     saveSuccess.value = false
     touched.value = {
       nombre: true,
+      categoriaControl: true,
       stock: true,
       stockEmpezado: true,
       stockMinimo: true,
@@ -1378,39 +2064,8 @@ onBeforeRouteLeave(() => {
   gap: 0.42rem;
 }
 
-.area-filter-panel {
-  display: grid;
-  grid-template-columns: minmax(8rem, auto) minmax(0, 1fr);
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem;
-  border-radius: 14px;
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
-}
-
-.area-filter-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 0.08rem;
-  min-width: 0;
-}
-
-.area-filter-copy span {
-  color: #64748b;
-  font-weight: 850;
-  text-transform: uppercase;
-  letter-spacing: 0.018em;
-  line-height: 1.15;
-}
-
-.area-filter-copy strong {
-  color: #0f172a;
-  font-weight: 900;
-  line-height: 1.1;
-}
-
 .area-filter-segment {
+  width: 100%;
   --background: #ffffff;
   border: 1px solid #dbe3ee;
   border-radius: 12px;
@@ -1419,11 +2074,33 @@ onBeforeRouteLeave(() => {
 
 .area-filter-segment ion-segment-button {
   min-height: 34px;
+  --background: transparent;
+  --background-checked: transparent;
   --indicator-color: var(--ion-color-primary, #2563eb);
   --color: #475569;
-  --color-checked: #ffffff;
+  --color-checked: #475569;
+  color: #475569;
   font-weight: 800;
   text-transform: none;
+}
+
+/* Mantiene la animación nativa del indicador deslizante de Ionic.
+   El texto conserva el mismo color seleccionado o no seleccionado. */
+.area-filter-segment ion-segment-button::part(native) {
+  color: #475569 !important;
+  background: transparent !important;
+}
+
+.area-filter-segment ion-segment-button.segment-button-checked::part(native),
+.area-filter-segment ion-segment-button.area-filter-option--selected::part(native) {
+  color: #475569 !important;
+  background: transparent !important;
+  font-weight: 900;
+}
+
+.area-filter-segment ion-segment-button::part(indicator-background) {
+  background: var(--ion-color-primary, #2563eb);
+  border-radius: 999px;
 }
 
 .product-searchbar {
@@ -1934,11 +2611,6 @@ ion-button {
     gap: 0.34rem;
   }
 
-  .area-filter-panel {
-    grid-template-columns: 1fr;
-    gap: 0.38rem;
-  }
-
   .area-filter-segment {
     overflow-x: auto;
   }
@@ -2132,7 +2804,6 @@ ion-button {
 }
 @media (max-width: 720px) {
   .catalog-controls { grid-template-columns: 1fr; }
-  .area-filter-panel { grid-template-columns: 1fr; }
   .area-stock-grid { grid-template-columns: 1fr; }
 }
 

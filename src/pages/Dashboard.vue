@@ -4,10 +4,11 @@
       <ion-toolbar color="primary">
         <ion-buttons slot="start">
           <ion-button class="modules-trigger" @click="openModulesMenu">
-            <ion-icon slot="start" :icon="apps"></ion-icon> 
+            <ion-icon slot="start" :icon="apps"></ion-icon>
+            <span class="modules-label">Módulos</span>
           </ion-button>
         </ion-buttons>
-        <ion-title class="dashboard-title">Panel de préstamos</ion-title>
+        <ion-title class="dashboard-title">Home</ion-title>
         <ion-buttons slot="end">
           <ion-button @click="handleLogout">
             <ion-icon slot="icon-only" :icon="logOut"></ion-icon>
@@ -53,488 +54,179 @@
     </ion-popover>
 
     <ion-content class="dashboard-content">
-      <main class="page-shell">
-        <section class="hero-card">
-          <div class="hero-copy">
-            <span class="eyebrow">Dashboard operativo</span>
-            <h1>Información clave de préstamos</h1>
-            <p>
-              Revisa consumo, adeudos, pendientes y trabajos con mayor movimiento sin cargar todo el historial.
-            </p>
+      <div class="page-container dashboard-page">
+        <section class="dashboard-hero">
+          <div class="dashboard-hero-copy">
+            <span class="dashboard-eyebrow">Dashboard</span>
+            <h2>Resumen general</h2>
           </div>
 
-          <div class="hero-actions">
-            <ion-button class="hero-button" :disabled="loading" @click="loadDashboardData">
+          <div class="dashboard-hero-actions">
+            <ion-button
+              color="primary"
+              fill="outline"
+              class="dashboard-hero-button"
+              :disabled="loading"
+              @click="loadDashboardData"
+            >
               <ion-icon slot="start" :icon="refreshOutline"></ion-icon>
               Actualizar
             </ion-button>
-            <span v-if="lastLoadedAt" class="last-update">Actualizado: {{ formatTime(lastLoadedAt) }}</span>
+            <span v-if="lastLoadedAt" class="dashboard-last-update">
+              Actualizado {{ formatTime(lastLoadedAt) }}
+            </span>
           </div>
         </section>
 
-        <section class="filters-card">
-          <div class="section-heading">
-            <div>
-              <h2>Filtros</h2>
-              <p>{{ rangeLabel }}</p>
-            </div>
-            <button class="text-action" type="button" @click="resetFilters">Limpiar</button>
-          </div>
+        <span v-if="homeAlertsError" class="dashboard-error">{{ homeAlertsError }}</span>
 
-          <ion-segment :value="rangePreset" class="range-segment" @ionChange="handleRangeChange">
-            <ion-segment-button value="today">
-              <ion-label>Hoy</ion-label>
-            </ion-segment-button>
-            <ion-segment-button value="week">
-              <ion-label>Semana</ion-label>
-            </ion-segment-button>
-            <ion-segment-button value="month">
-              <ion-label>Mes</ion-label>
-            </ion-segment-button>
-            <ion-segment-button value="30d">
-              <ion-label>30 días</ion-label>
-            </ion-segment-button>
-            <ion-segment-button value="custom">
-              <ion-label>Rango</ion-label>
-            </ion-segment-button>
-          </ion-segment>
+        <section class="dashboard-overview-grid" aria-label="Resumen operativo">
+          <article class="dashboard-overview-card dashboard-overview-card--primary">
+            <span class="dashboard-overview-label">Productos en alerta</span>
+            <strong>{{ lowStockProducts.length }}</strong>
+            <small>Igual o debajo del mínimo</small>
+          </article>
 
-          <div v-if="rangePreset === 'custom'" class="custom-range-grid">
-            <label class="field-block">
-              <span>Desde</span>
-              <ion-input v-model="dateStart" class="dashboard-field" type="date" :legacy="true"></ion-input>
-            </label>
-            <label class="field-block">
-              <span>Hasta</span>
-              <ion-input v-model="dateEnd" class="dashboard-field" type="date" :legacy="true"></ion-input>
-            </label>
-            <ion-button class="apply-button" :disabled="loading" @click="loadDashboardData">Cargar rango</ion-button>
-          </div>
+          <article class="dashboard-overview-card">
+            <span class="dashboard-overview-label">Sin stock</span>
+            <strong>{{ outOfStockProductsCount }}</strong>
+            <small>Requieren atención inmediata</small>
+          </article>
 
-          <div class="filter-grid">
-            <label class="field-block field-wide">
-              <span>Búsqueda general</span>
-              <ion-input
-                v-model="searchTerm"
-                class="dashboard-field"
-                type="text"
-                placeholder="Empresa, unidad, trabajo, colaborador o producto"
-                :legacy="true"
-              ></ion-input>
-            </label>
+          <article class="dashboard-overview-card">
+            <span class="dashboard-overview-label">Con adeudos</span>
+            <strong>{{ collaboratorsWithDebt.length }}</strong>
+            <small>Colaboradores pendientes</small>
+          </article>
 
-            <label class="field-block">
-              <span>Empresa</span>
-              <ion-select v-model="empresaFilter" class="dashboard-field" interface="popover" placeholder="Todas" :legacy="true">
-                <ion-select-option value="">Todas</ion-select-option>
-                <ion-select-option v-for="empresa in empresaOptions" :key="empresa" :value="empresa">
-                  {{ empresa }}
-                </ion-select-option>
-              </ion-select>
-            </label>
-
-            <label class="field-block">
-              <span>Unidad</span>
-              <ion-select v-model="unidadFilter" class="dashboard-field" interface="popover" placeholder="Todas" :legacy="true">
-                <ion-select-option value="">Todas</ion-select-option>
-                <ion-select-option v-for="unidad in unidadOptions" :key="unidad" :value="unidad">
-                  {{ unidad }}
-                </ion-select-option>
-              </ion-select>
-            </label>
-          </div>
+          <article class="dashboard-overview-card">
+            <span class="dashboard-overview-label">Artículos pendientes</span>
+            <strong>{{ totalPendingDebt }}</strong>
+            <small>Unidades por saldar</small>
+          </article>
         </section>
 
-        <section v-if="loading" class="state-card">
-          <ion-spinner name="crescent"></ion-spinner>
-          <p>Cargando información del periodo...</p>
-        </section>
 
-        <section v-else-if="loadError" class="state-card error-state">
-          <ion-icon :icon="warningOutline"></ion-icon>
-          <div>
-            <h2>No se pudo cargar el dashboard</h2>
-            <p>{{ loadError }}</p>
-          </div>
-        </section>
-
-        <template v-else>
-          <section class="summary-grid">
-            <article class="summary-card summary-consumed">
-              <span class="summary-label">Consumido</span>
-              <strong>{{ formatNumber(dashboard.resumen.consumidoTotal) }}</strong>
-              <small>Material usado en trabajos</small>
-            </article>
-            <article class="summary-card summary-debt">
-              <span class="summary-label">Adeudado</span>
-              <strong>{{ formatNumber(dashboard.resumen.adeudoTotal) }}</strong>
-              <small>Pendiente de justificar o reponer</small>
-            </article>
-            <article class="summary-card summary-pending">
-              <span class="summary-label">Pendiente</span>
-              <strong>{{ formatNumber(dashboard.resumen.pendienteTotal) }}</strong>
-              <small>Productos aún abiertos</small>
-            </article>
-            <article class="summary-card summary-work">
-              <span class="summary-label">Trabajos</span>
-              <strong>{{ formatNumber(dashboard.resumen.trabajosTotal) }}</strong>
-              <small>{{ formatNumber(filteredPrestamos.length) }} préstamo(s) filtrados</small>
-            </article>
+          
+          <section v-if="loading" class="dashboard-loading-state">
+            <ion-spinner name="circles"></ion-spinner>
+            <p>Cargando alertas...</p>
           </section>
 
-          <section v-if="!filteredPrestamos.length" class="state-card empty-state">
-            <ion-icon :icon="analyticsOutline"></ion-icon>
-            <div>
-              <h2>Sin datos para mostrar</h2>
-              <p>Prueba con otro rango de fechas, empresa, unidad o búsqueda.</p>
-            </div>
-          </section>
-
-          <template v-else>
-            <section class="chart-mode-card">
-              <div class="section-heading compact-heading">
-                <div>
-                  <h2>Explorar gráficas</h2>
-                  <p>Toca una barra para ver detalle, filtrar el dashboard o abrir préstamos.</p>
-                </div>
-              </div>
-              <ion-segment :value="chartMetric" class="metric-segment" @ionChange="handleMetricChange">
-                <ion-segment-button value="consumido"><ion-label>Consumido</ion-label></ion-segment-button>
-                <ion-segment-button value="adeudo"><ion-label>Adeudo</ion-label></ion-segment-button>
-                <ion-segment-button value="pendiente"><ion-label>Pendiente</ion-label></ion-segment-button>
-                <ion-segment-button value="total"><ion-label>Total</ion-label></ion-segment-button>
-              </ion-segment>
-            </section>
-
-            <section class="dashboard-graphs-grid">
-              <article class="chart-card material-card">
-                <div class="card-heading">
+          <div v-else class="dashboard-alert-grid">
+            <article class="dashboard-alert-card">
+              <header class="dashboard-alert-header">
+                <div class="dashboard-alert-title">
+                  <span class="dashboard-alert-icon dashboard-alert-icon--stock">
+                    <ion-icon :icon="cubeOutline"></ion-icon>
+                  </span>
                   <div>
-                    <span class="eyebrow">Estado del material</span>
-                    <h2>Consumido, devuelto, adeudado y pendiente</h2>
-                    <p>Resumen visual del material movido en el periodo.</p>
-                  </div>
-                  <div class="mini-badge">{{ formatNumber(dashboard.resumen.materialTotal) }} total</div>
-                </div>
-
-                <div class="material-layout">
-                  <div class="donut-wrap">
-                    <div class="status-donut" :style="estadoDonutStyle">
-                      <span>{{ dashboard.resumen.materialTotal ? '100%' : '0%' }}</span>
-                    </div>
-                  </div>
-
-                  <div class="bar-list status-bars">
-                    <div v-for="item in dashboard.estadoMaterial" :key="item.key" class="bar-row status-row">
-                      <div class="bar-meta">
-                        <span>{{ item.label }}</span>
-                        <strong>{{ formatNumber(item.value) }}</strong>
-                      </div>
-                      <div class="bar-track">
-                        <div class="bar-fill" :class="`bar-${item.key}`" :style="{ width: getBarWidth(item.value, dashboard.maxEstadoMaterial) }"></div>
-                      </div>
-                    </div>
+                    <h4>Productos con menos stock</h4>
+                    <p>Ordenados por nivel de urgencia.</p>
                   </div>
                 </div>
-              </article>
+                <span class="dashboard-chip dashboard-chip--warning">
+                  {{ lowStockProducts.length }}
+                </span>
+              </header>
 
-              <article class="chart-card product-bars-card">
-                <div class="card-heading product-card-heading">
-                  <div>
-                    <span class="eyebrow">Productos</span>
-                    <h2>Consumido vs adeudo por producto</h2>
-                    <p>Observa cada suministro con dos tramos: lo consumido y lo que quedó adeudado.</p>
-                  </div>
-                  <ion-icon :icon="cubeOutline"></ion-icon>
-                </div>
-
-                <div v-if="productPieItems.length" class="product-pie">
-                  <div class="product-pie-chart-wrap">
-                    <div class="product-pie-donut" :style="productPieStyle" aria-label="Gráfica de pastel de productos">
-                      <div class="product-pie-hole">
-                        <strong>{{ formatNumber(productPieTotal) }}</strong>
-                        <span>total</span>
-                      </div>
-                    </div>
-
-                    <div class="product-pie-legend">
-                      <button
-                        v-for="(item, index) in productPieItems"
-                        :key="`product-pie-${item.key || item.label}`"
-                        class="product-pie-legend-item"
-                        type="button"
-                        @click="openInsightDetail('producto', item)"
-                      >
-                        <span class="product-pie-color" :style="{ background: getProductPieColor(index) }"></span>
-                        <div class="product-pie-copy">
-                          <strong>{{ item.label }}</strong>
-                          <small>
-                            {{ formatNumber((item.consumido || 0) + (item.adeudo || 0)) }} total ·
-                            Cons {{ formatNumber(item.consumido || 0) }} · Ade {{ formatNumber(item.adeudo || 0) }}
-                          </small>
-                        </div>
-                        <em>{{ getProductPieShare(item) }}</em>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <p v-else class="empty-text">No hay productos con movimiento en este periodo.</p>
-              </article>
-
-              <article v-for="chart in chartSections" :key="chart.key" class="chart-card graph-card">
-                <div class="card-heading chart-heading">
-                  <div>
-                    <span class="eyebrow">{{ chart.eyebrow }}</span>
-                    <h2>{{ chart.title }}</h2>
-                    <p>{{ chart.description }}</p>
-                  </div>
-                  <ion-icon :icon="chart.icon"></ion-icon>
-                </div>
-
-                <div v-if="getVisibleChartItems(chart.items, chart.metric).length" class="insight-card-grid">
-                  <button
-                    v-for="(item, index) in getVisibleChartItems(chart.items, chart.metric)"
-                    :key="`${chart.key}-${item.key || item.label}`"
-                    class="insight-chart-card"
-                    type="button"
-                    @click="openInsightDetail(chart.type, item)"
-                  >
-                    <div class="insight-card-top">
-                      <span class="insight-rank">#{{ index + 1 }}</span>
-                      <div class="insight-card-copy">
-                        <strong>{{ item.label }}</strong>
-                        <small>{{ getChartSubLabel(item) }}</small>
-                      </div>
-                      <div class="insight-card-value">
-                        <strong>{{ formatNumber(getMetricValue(item, chart.metric)) }}</strong>
-                        <small>{{ getMetricLabel(chart.metric) }}</small>
-                      </div>
-                    </div>
-
-                    <div class="mini-bar-chart" aria-label="Gráfica de barras">
-                      <div
-                        v-for="metricRow in chartLegend"
-                        :key="`${chart.key}-${item.key}-${metricRow.key}`"
-                        class="mini-bar-line"
-                        :class="{ 'mini-bar-line--active': chart.metric === metricRow.key || chart.metric === 'total' }"
-                      >
-                        <span>{{ metricRow.label }}</span>
-                        <div class="mini-bar-track">
-                          <i
-                            class="mini-bar-fill"
-                            :class="`mini-bar-fill--${metricRow.key}`"
-                            :style="{ width: getCardMetricWidth(item, chart.items, metricRow.key) }"
-                          ></i>
-                        </div>
-                        <strong>{{ formatNumber(item[metricRow.key]) }}</strong>
-                      </div>
-                    </div>
-
-                    <div class="insight-card-footer">
-                      <span>{{ formatNumber(item.prestamosTotal || 0) }} préstamo(s)</span>
-                      <em>Ver detalle</em>
-                    </div>
-                  </button>
-                </div>
-
-                <p v-else class="empty-text">{{ chart.emptyText }}</p>
-              </article>
-            </section>
-
-            <section class="alerts-card">
-              <div class="card-heading">
-                <div>
-                  <span class="eyebrow">Alertas</span>
-                  <h2>Trabajos con adeudo o material pendiente</h2>
-                </div>
-                <span class="mini-badge warning">{{ dashboard.trabajosConAlerta.length }} alerta(s)</span>
-              </div>
-
-              <div v-if="dashboard.trabajosConAlerta.length" class="alert-list">
+              <div v-if="lowStockProducts.length" class="dashboard-alert-list">
                 <button
-                  v-for="item in dashboard.trabajosConAlerta"
-                  :key="item.key"
-                  class="alert-row clickable-row"
+                  v-for="product in lowStockProducts.slice(0, HOME_ALERT_LIMIT)"
+                  :key="product.id"
                   type="button"
-                  @click="openInsightDetail('trabajo', item)"
+                  class="dashboard-alert-row"
+                  @click="navigateTo('/productos')"
                 >
-                  <div class="alert-main">
-                    <strong>{{ item.label }}</strong>
-                    <span>{{ item.subLabel }}</span>
+                  <div class="dashboard-alert-copy">
+                    <strong>{{ product.nombre || 'Producto sin nombre' }}</strong>
+                    <span>
+                      {{ getProductControlLabel(product) }} · mínimo {{ formatNumber(product.stockMinimo) }}
+                    </span>
                   </div>
-                  <div class="alert-values">
-                    <span>Adeudo {{ formatNumber(item.adeudo) }}</span>
-                    <span>Pendiente {{ formatNumber(item.pendiente) }}</span>
+
+                  <div
+                    class="dashboard-alert-metric"
+                    :class="{ 'dashboard-alert-metric--danger': product.totalStock <= 0 }"
+                  >
+                    <strong>{{ formatNumber(product.totalStock) }}</strong>
+                    <span>disponible</span>
                   </div>
                 </button>
               </div>
 
-              <p v-else class="empty-text">No hay trabajos con alertas en este filtro.</p>
-            </section>
-          </template>
-        </template>
-      </main>
+              <div v-else class="dashboard-empty-state">
+                <ion-icon :icon="cubeOutline"></ion-icon>
+                <strong>Inventario saludable</strong>
+                <span>No hay productos debajo de su stock mínimo.</span>
+              </div>
+
+              <button
+                type="button"
+                class="dashboard-card-action"
+                @click="navigateTo('/productos')"
+              >
+                Ver módulo Productos
+              </button>
+            </article>
+
+            <article class="dashboard-alert-card">
+              <header class="dashboard-alert-header">
+                <div class="dashboard-alert-title">
+                  <span class="dashboard-alert-icon dashboard-alert-icon--debt">
+                    <ion-icon :icon="people"></ion-icon>
+                  </span>
+                  <div>
+                    <h4>Colaboradores con adeudos</h4>
+                    <p>Ordenados por cantidad pendiente.</p>
+                  </div>
+                </div>
+                <span class="dashboard-chip dashboard-chip--danger">
+                  {{ collaboratorsWithDebt.length }}
+                </span>
+              </header>
+
+              <div v-if="collaboratorsWithDebt.length" class="dashboard-alert-list">
+                <button
+                  v-for="collaborator in collaboratorsWithDebt.slice(0, HOME_ALERT_LIMIT)"
+                  :key="collaborator.key"
+                  type="button"
+                  class="dashboard-alert-row"
+                  @click="navigateTo('/prestamos')"
+                >
+                  <div class="dashboard-alert-copy">
+                    <strong>{{ collaborator.nombre }}</strong>
+                    <span>
+                      {{ collaborator.adeudosTotal }} adeudo(s) ·
+                      {{ collaborator.productosTotal }} producto(s)
+                    </span>
+                  </div>
+
+                  <div class="dashboard-alert-metric dashboard-alert-metric--danger">
+                    <strong>{{ formatNumber(collaborator.cantidadPendiente) }}</strong>
+                    <span>pendiente</span>
+                  </div>
+                </button>
+              </div>
+
+              <div v-else class="dashboard-empty-state">
+                <ion-icon :icon="people"></ion-icon>
+                <strong>Sin adeudos pendientes</strong>
+                <span>No hay colaboradores con productos por saldar.</span>
+              </div>
+
+              <button
+                type="button"
+                class="dashboard-card-action"
+                @click="navigateTo('/prestamos')"
+              >
+                Ver módulo Préstamos
+              </button>
+            </article>
+          </div>
+      </div>
     </ion-content>
 
-    <ion-modal :is-open="isInsightModalOpen" css-class="dashboard-detail-modal" @did-dismiss="closeInsightModal">
-      <ion-header>
-        <ion-toolbar color="primary">
-          <ion-title>{{ selectedInsightTitle }}</ion-title>
-          <ion-buttons slot="end">
-            <ion-button @click="closeInsightModal">Cerrar</ion-button>
-          </ion-buttons>
-        </ion-toolbar>
-      </ion-header>
-
-      <ion-content class="detail-modal-content">
-        <div v-if="selectedInsight" class="detail-modal-body">
-          <section class="detail-hero">
-            <div>
-              <span class="eyebrow">{{ selectedInsightKindLabel }}</span>
-              <h2>{{ selectedInsight.label }}</h2>
-              <p>{{ selectedInsight.subLabel || rangeLabel }}</p>
-            </div>
-            <span class="mini-badge">{{ chartMetricLabel }}</span>
-          </section>
-
-          <section class="detail-metrics-grid">
-            <article class="detail-metric consumed">
-              <span>Consumido</span>
-              <strong>{{ formatNumber(selectedInsightDetail.resumen.consumido) }}</strong>
-            </article>
-            <article class="detail-metric debt">
-              <span>Adeudado</span>
-              <strong>{{ formatNumber(selectedInsightDetail.resumen.adeudo) }}</strong>
-            </article>
-            <article class="detail-metric pending">
-              <span>Pendiente</span>
-              <strong>{{ formatNumber(selectedInsightDetail.resumen.pendiente) }}</strong>
-            </article>
-            <article class="detail-metric returned">
-              <span>Devuelto</span>
-              <strong>{{ formatNumber(selectedInsightDetail.resumen.devuelto) }}</strong>
-            </article>
-          </section>
-
-          <section class="detail-section">
-            <div class="section-heading compact-heading">
-              <div>
-                <h2>Desglose visual</h2>
-                <p>Gráfica de barras del elemento seleccionado.</p>
-              </div>
-            </div>
-            <div class="mini-bar-chart mini-bar-chart--detail">
-              <div v-for="metricRow in chartLegend" :key="`detail-${metricRow.key}`" class="mini-bar-line mini-bar-line--active">
-                <span>{{ metricRow.label }}</span>
-                <div class="mini-bar-track">
-                  <i
-                    class="mini-bar-fill"
-                    :class="`mini-bar-fill--${metricRow.key}`"
-                    :style="{ width: getDetailMetricWidth(metricRow.key) }"
-                  ></i>
-                </div>
-                <strong>{{ formatNumber(selectedInsightDetail.resumen[metricRow.key]) }}</strong>
-              </div>
-            </div>
-          </section>
-
-          <section class="detail-section" v-if="selectedInsightDetail.productos.length">
-            <div class="section-heading compact-heading">
-              <div>
-                <h2>Productos relacionados</h2>
-                <p v-if="selectedInsight.type === 'trabajo'">Productos consumidos por este trabajo.</p>
-                <p v-else>Productos con movimiento dentro de este filtro.</p>
-              </div>
-            </div>
-            <div v-if="getVisibleChartItems(selectedInsightDetail.productos, 'consumido', DETAIL_LIMIT).length" class="insight-card-grid insight-card-grid--detail">
-              <button
-                v-for="(item, index) in getVisibleChartItems(selectedInsightDetail.productos, 'consumido', DETAIL_LIMIT)"
-                :key="`detail-product-${item.key || item.label}`"
-                class="insight-chart-card insight-chart-card--compact"
-                type="button"
-                @click="openInsightDetail('producto', item)"
-              >
-                <div class="insight-card-top">
-                  <span class="insight-rank">#{{ index + 1 }}</span>
-                  <div class="insight-card-copy">
-                    <strong>{{ item.label }}</strong>
-                    <small>{{ item.subLabel || 'Producto' }}</small>
-                  </div>
-                  <div class="insight-card-value">
-                    <strong>{{ formatNumber(item.consumido) }}</strong>
-                    <small>Consumido</small>
-                  </div>
-                </div>
-                <div class="mini-bar-chart" aria-label="Gráfica de consumo del producto">
-                  <div class="mini-bar-line mini-bar-line--active">
-                    <span>Consumido</span>
-                    <div class="mini-bar-track">
-                      <i class="mini-bar-fill mini-bar-fill--consumido" :style="{ width: getCardMetricWidth(item, selectedInsightDetail.productos, 'consumido') }"></i>
-                    </div>
-                    <strong>{{ formatNumber(item.consumido) }}</strong>
-                  </div>
-                </div>
-              </button>
-            </div>
-            <p v-else class="empty-text">Sin productos relacionados.</p>
-          </section>
-
-          <section class="detail-section" v-if="selectedInsightDetail.adeudos.length">
-            <div class="section-heading compact-heading">
-              <div>
-                <h2>Adeudos del periodo</h2>
-                <p>Material pendiente asociado a este elemento.</p>
-              </div>
-            </div>
-
-            <div class="mini-list">
-              <article v-for="row in selectedInsightDetail.adeudos" :key="row.key" class="mini-row">
-                <div>
-                  <strong>{{ row.producto }}</strong>
-                  <span>{{ row.trabajo }} · {{ row.colaborador }}</span>
-                </div>
-                <em>{{ formatNumber(row.adeudo) }}</em>
-              </article>
-            </div>
-          </section>
-
-          <section class="detail-section" v-if="selectedInsightDetail.prestamos.length">
-            <div class="section-heading compact-heading">
-              <div>
-                <h2>Préstamos relacionados</h2>
-                <p>{{ selectedInsightDetail.prestamos.length }} registro(s) encontrados en el rango actual.</p>
-              </div>
-            </div>
-
-            <div class="mini-list">
-              <article v-for="prestamo in selectedInsightDetail.prestamos" :key="prestamo.id" class="mini-row loan-row">
-                <div>
-                  <strong>{{ cleanLabel(prestamo.descripcionTrabajo || prestamo.trabajoDescripcion, 'Sin descripción') }}</strong>
-                  <span>
-                    {{ cleanLabel(prestamo.empresaTrabajo || prestamo.empresa, 'Sin empresa') }} ·
-                    {{ cleanLabel(prestamo.unidadTrabajo || prestamo.unidad || prestamo.placas, 'Sin unidad') }} ·
-                    {{ cleanLabel(prestamo.colaboradorNombre || prestamo.colaborador, 'Sin colaborador') }}
-                  </span>
-                </div>
-                <em>{{ getPrestamoFechaOperativa(prestamo) || 'Sin fecha' }}</em>
-              </article>
-            </div>
-          </section>
-        </div>
-      </ion-content>
-
-      <ion-footer>
-        <div class="modal-footer-actions">
-          <ion-button fill="outline" color="primary" @click="filterDashboardByInsight">
-            Filtrar dashboard
-          </ion-button>
-          <ion-button color="primary" @click="openPrestamosWithInsight">
-            Abrir en préstamos
-          </ion-button>
-        </div>
-      </ion-footer>
-    </ion-modal>
   </ion-page>
 </template>
 
@@ -584,10 +276,14 @@ import {
   briefcaseOutline
 } from 'ionicons/icons'
 
-const PRESTAMOS_COLLECTION = 'prestamos_diarios'
+const PRESTAMOS_COLLECTION = 'prestamos'
 const MAX_PRESTAMOS_RANGO = 600
 const TOP_LIMIT = 6
 const DETAIL_LIMIT = 8
+const HOME_ALERT_LIMIT = 5
+const PRODUCTS_COLLECTION = 'productos_nuevos'
+const ADEUDOS_COLLECTION = 'adeudosProductos'
+const STOCK_AREAS = ['OFICINA', 'BODEGA', 'SEGUNDO_PISO']
 
 const router = useRouter()
 const { logout } = useAuth()
@@ -598,6 +294,9 @@ const loading = ref(false)
 const loadError = ref('')
 const prestamosRaw = ref([])
 const lastLoadedAt = ref(null)
+const productsForAlerts = ref([])
+const pendingDebtsForAlerts = ref([])
+const homeAlertsError = ref('')
 
 const rangePreset = ref('week')
 const dateStart = ref('')
@@ -700,6 +399,108 @@ function applyDatePreset(preset) {
   dateStart.value = formatDateInput(start)
   dateEnd.value = todayString()
 }
+
+function getProductTotalStock(product = {}) {
+  const categoriaControl = String(product.categoriaControl || '').trim().toUpperCase()
+  const stockPorArea = product.stockPorArea && typeof product.stockPorArea === 'object'
+    ? product.stockPorArea
+    : null
+
+  if (!stockPorArea) {
+    const stock = Math.max(0, Number(product.stock || 0))
+    const empezado = categoriaControl === 'FRACCIONABLE'
+      ? Math.max(0, Number(product.stockEmpezado || 0))
+      : 0
+    return stock + empezado
+  }
+
+  return STOCK_AREAS.reduce((total, area) => {
+    const areaStock = stockPorArea?.[area] || {}
+    const stock = Math.max(0, Number(areaStock.stock || 0))
+    const empezado = categoriaControl === 'FRACCIONABLE'
+      ? Math.max(0, Number(areaStock.stockEmpezado || 0))
+      : 0
+    return total + stock + empezado
+  }, 0)
+}
+
+function getProductControlLabel(product = {}) {
+  const category = String(product.categoriaControl || '').trim().toUpperCase()
+  if (category === 'FRACCIONABLE') return 'Envase'
+  if (category === 'HERRAMIENTA') return 'Herramienta'
+  return 'Pieza'
+}
+
+const lowStockProducts = computed(() => {
+  return productsForAlerts.value
+    .filter((product) => product?.activo !== false)
+    .map((product) => {
+      const totalStock = getProductTotalStock(product)
+      const stockMinimo = Math.max(0, Number(product.stockMinimo || 0))
+      return {
+        ...product,
+        totalStock,
+        stockMinimo,
+        stockDeficit: Math.max(0, stockMinimo - totalStock)
+      }
+    })
+    .filter((product) => product.totalStock <= product.stockMinimo)
+    .sort((a, b) => {
+      if ((a.totalStock <= 0) !== (b.totalStock <= 0)) return a.totalStock <= 0 ? -1 : 1
+      if (b.stockDeficit !== a.stockDeficit) return b.stockDeficit - a.stockDeficit
+      if (a.totalStock !== b.totalStock) return a.totalStock - b.totalStock
+      return String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es-MX', { sensitivity: 'base' })
+    })
+})
+
+const collaboratorsWithDebt = computed(() => {
+  const collaborators = new Map()
+
+  for (const debt of pendingDebtsForAlerts.value) {
+    const pending = Math.max(0, Number(debt.cantidadPendiente ?? debt.cantidadAdeudada ?? 0))
+    if (pending <= 0) continue
+
+    const collaboratorId = String(debt.colaboradorId || '').trim()
+    const collaboratorName = String(debt.colaboradorNombre || debt.colaborador || 'Sin colaborador').trim()
+    const key = collaboratorId || normalizeText(collaboratorName) || `sin-colaborador-${collaborators.size}`
+    const current = collaborators.get(key) || {
+      key,
+      nombre: collaboratorName || 'Sin colaborador',
+      cantidadPendiente: 0,
+      adeudosTotal: 0,
+      productos: new Set()
+    }
+
+    current.cantidadPendiente += pending
+    current.adeudosTotal += 1
+    current.productos.add(String(debt.productoId || debt.productoNombre || debt.nombre || debt.id))
+    collaborators.set(key, current)
+  }
+
+  return Array.from(collaborators.values())
+    .map((item) => ({
+      ...item,
+      productosTotal: item.productos.size,
+      productos: undefined
+    }))
+    .sort((a, b) => {
+      if (b.cantidadPendiente !== a.cantidadPendiente) return b.cantidadPendiente - a.cantidadPendiente
+      if (b.adeudosTotal !== a.adeudosTotal) return b.adeudosTotal - a.adeudosTotal
+      return a.nombre.localeCompare(b.nombre, 'es-MX', { sensitivity: 'base' })
+    })
+})
+
+const outOfStockProductsCount = computed(() => {
+  return lowStockProducts.value.filter((product) => Number(product.totalStock || 0) <= 0).length
+})
+
+const totalPendingDebt = computed(() => {
+  return collaboratorsWithDebt.value.reduce(
+    (total, collaborator) => total + Math.max(0, Number(collaborator.cantidadPendiente || 0)),
+    0
+  )
+})
+
 
 const chartMetricLabel = computed(() => METRIC_LABELS[chartMetric.value] || 'Consumido')
 const productPieItems = computed(() => mergeProductGraphItems(dashboard.value.productosConsumidos, dashboard.value.productosAdeudos))
@@ -886,38 +687,40 @@ function handleMetricChange(event) {
   chartMetric.value = event?.detail?.value || 'consumido'
 }
 
+async function loadHomeAlerts() {
+  homeAlertsError.value = ''
+
+  try {
+    const [productsSnapshot, debtsSnapshot] = await Promise.all([
+      getDocs(collection(db, PRODUCTS_COLLECTION)),
+      getDocs(query(collection(db, ADEUDOS_COLLECTION), where('estado', '==', 'pendiente')))
+    ])
+
+    productsForAlerts.value = productsSnapshot.docs.map((document) => ({
+      id: document.id,
+      ...document.data()
+    }))
+
+    pendingDebtsForAlerts.value = debtsSnapshot.docs.map((document) => ({
+      id: document.id,
+      ...document.data()
+    }))
+  } catch (error) {
+    productsForAlerts.value = []
+    pendingDebtsForAlerts.value = []
+    homeAlertsError.value = error?.message || 'No se pudieron cargar las alertas.'
+  }
+}
+
 async function loadDashboardData() {
-  if (!dateStart.value || !dateEnd.value) {
-    loadError.value = 'Selecciona una fecha inicial y una fecha final.'
-    return
-  }
-
-  if (dateStart.value > dateEnd.value) {
-    loadError.value = 'La fecha inicial no puede ser mayor que la fecha final.'
-    return
-  }
-
   loading.value = true
   loadError.value = ''
 
   try {
-    const prestamosQuery = query(
-      collection(db, PRESTAMOS_COLLECTION),
-      where('fechaOperativa', '>=', dateStart.value),
-      where('fechaOperativa', '<=', dateEnd.value),
-      orderBy('fechaOperativa', 'desc'),
-      limitQuery(MAX_PRESTAMOS_RANGO)
-    )
-
-    const snapshot = await getDocs(prestamosQuery)
-    prestamosRaw.value = snapshot.docs
-      .map((document) => ({ id: document.id, ...document.data() }))
-      .sort(sortPrestamosDesc)
-
+    await loadHomeAlerts()
     lastLoadedAt.value = new Date()
-    syncFiltersWithLoadedData()
   } catch (error) {
-    loadError.value = error?.message || 'Ocurrió un error al cargar los préstamos.'
+    loadError.value = error?.message || 'Ocurrió un error al cargar las alertas.'
   } finally {
     loading.value = false
   }
@@ -1518,6 +1321,268 @@ const handleLogout = async () => {
 }
 
 .hero-card,
+.home-alerts-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.home-alerts-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.home-alerts-heading h2 {
+  margin: 4px 0 0;
+  color: #1f3555;
+  font-size: 1.18rem;
+  font-weight: 950;
+}
+
+.home-alerts-heading p {
+  margin: 5px 0 0;
+  color: #667085;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.home-alerts-error {
+  max-width: 340px;
+  border-radius: 10px;
+  background: #fff1f2;
+  color: #be123c;
+  padding: 7px 10px;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.home-alerts-heading h1 {
+  margin: 0;
+  color: #1f3555;
+  font-size: 1.35rem;
+  font-weight: 950;
+}
+
+.home-alerts-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.home-alerts-actions ion-button {
+  margin: 0;
+  font-weight: 800;
+  text-transform: none;
+}
+
+.home-alert-loading {
+  min-height: 110px;
+}
+
+.home-alerts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.home-alert-panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #dfe7f1;
+  border-radius: 20px;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(31, 53, 85, 0.065);
+}
+
+.home-alert-panel--stock {
+  border-top: 4px solid #d97706;
+}
+
+.home-alert-panel--debt {
+  border-top: 4px solid #b42318;
+}
+
+.home-alert-panel-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 11px;
+  align-items: center;
+  padding: 15px 16px 13px;
+  border-bottom: 1px solid #edf1f6;
+}
+
+.home-alert-panel-heading h3 {
+  margin: 0;
+  color: #1f3555;
+  font-size: 1rem;
+  font-weight: 950;
+}
+
+.home-alert-panel-heading p {
+  margin: 3px 0 0;
+  color: #667085;
+  font-size: 0.78rem;
+  line-height: 1.3;
+}
+
+.home-alert-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-size: 1.1rem;
+}
+
+.home-alert-icon--stock {
+  color: #b45309;
+  background: #fff7ed;
+}
+
+.home-alert-icon--debt {
+  color: #b42318;
+  background: #fff1f2;
+}
+
+.home-alert-count {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: #fff7ed;
+  color: #b45309;
+  font-size: 0.78rem;
+  font-weight: 950;
+}
+
+.home-alert-count--debt {
+  background: #fff1f2;
+  color: #b42318;
+}
+
+.home-alert-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.home-alert-item {
+  width: 100%;
+  appearance: none;
+  border: 0;
+  border-bottom: 1px solid #edf1f6;
+  background: #ffffff;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 150ms ease, transform 150ms ease;
+}
+
+.home-alert-item:hover {
+  background: #f8fafc;
+}
+
+.home-alert-item:active {
+  transform: scale(0.995);
+}
+
+.home-alert-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.home-alert-copy strong {
+  overflow: hidden;
+  color: #1f3555;
+  font-size: 0.9rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-alert-copy small {
+  color: #667085;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.home-alert-value {
+  flex: 0 0 auto;
+  min-width: 72px;
+  border-radius: 12px;
+  background: #fff7ed;
+  color: #b45309;
+  padding: 7px 9px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+
+.home-alert-value strong {
+  font-size: 1rem;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.home-alert-value small {
+  font-size: 0.67rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.home-alert-value--critical,
+.home-alert-value--debt {
+  background: #fff1f2;
+  color: #b42318;
+}
+
+.home-alert-empty {
+  min-height: 126px;
+  padding: 24px 16px;
+  display: grid;
+  place-content: center;
+  gap: 5px;
+  text-align: center;
+}
+
+.home-alert-empty strong {
+  color: #1f3555;
+  font-size: 0.92rem;
+  font-weight: 900;
+}
+
+.home-alert-empty span {
+  color: #667085;
+  font-size: 0.78rem;
+}
+
+.home-alert-more {
+  width: 100%;
+  appearance: none;
+  border: 0;
+  background: #fffbeb;
+  color: #a16207;
+  padding: 10px 14px;
+  font-size: 0.78rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.home-alert-more--debt {
+  background: #fff1f2;
+  color: #b42318;
+}
+
 .filters-card,
 .chart-mode-card,
 .chart-card,
@@ -2680,6 +2745,7 @@ const handleLogout = async () => {
 }
 
 @media (max-width: 900px) {
+  .home-alerts-grid,
   .summary-grid,
   .dashboard-graphs-grid,
   .charts-grid,
@@ -2719,6 +2785,28 @@ const handleLogout = async () => {
     min-width: 0;
   }
 
+  .home-alerts-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .home-alerts-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .home-alerts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .home-alert-item {
+    padding: 11px 12px;
+  }
+
+  .home-alert-panel-heading {
+    padding: 13px 12px 11px;
+  }
+
   .last-update { text-align: left; }
 
   .filters-card,
@@ -2745,6 +2833,7 @@ const handleLogout = async () => {
     min-width: 76px;
   }
 
+  .home-alerts-grid,
   .summary-grid,
   .dashboard-graphs-grid,
   .charts-grid,
@@ -2829,4 +2918,476 @@ const handleLogout = async () => {
     text-align: right;
   }
 }
+
+/* Dashboard alineado visualmente con el módulo Productos */
+.dashboard-content {
+  --background: #f5f7fb;
+}
+
+.page-container {
+  padding: 0.75rem;
+}
+
+.dashboard-page {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.dashboard-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
+  gap: 0.62rem;
+  padding: 0.82rem;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #ffffff 0%, #eef7ff 100%);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+}
+
+.dashboard-hero-copy {
+  min-width: 0;
+}
+
+.dashboard-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-bottom: 0.18rem;
+  color: #2563eb;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dashboard-hero-copy h2,
+.dashboard-section-heading h3,
+.dashboard-alert-header h4 {
+  margin: 0;
+  color: #0f172a;
+  font-weight: 800;
+}
+
+.dashboard-hero-copy h2 {
+  line-height: 1.18;
+}
+
+.dashboard-hero-copy p,
+.dashboard-section-heading p,
+.dashboard-alert-header p {
+  margin: 0.18rem 0 0;
+  color: #64748b;
+  line-height: 1.28;
+}
+
+.dashboard-hero-actions {
+  min-width: 142px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: stretch;
+  gap: 0.28rem;
+}
+
+.dashboard-hero-button {
+  min-height: 36px;
+  height: auto;
+  margin: 0;
+  font-weight: 700;
+  text-transform: none;
+  --border-radius: 12px;
+  --padding-top: 0.5rem;
+  --padding-bottom: 0.5rem;
+}
+
+.dashboard-last-update {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.dashboard-error {
+  display: block;
+  padding: 0.58rem 0.68rem;
+  border: 1px solid #fecdd3;
+  border-radius: 12px;
+  background: #fff1f2;
+  color: #be123c;
+  font-size: 0.8rem;
+  font-weight: 750;
+}
+
+.dashboard-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.38rem;
+}
+
+.dashboard-overview-card {
+  min-width: 0;
+  padding: 0.56rem 0.6rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
+}
+
+.dashboard-overview-card--primary {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.dashboard-overview-label {
+  display: block;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.dashboard-overview-card strong {
+  display: block;
+  margin-top: 0.16rem;
+  color: #0f172a;
+  font-size: 1.45rem;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.dashboard-overview-card small {
+  display: block;
+  margin-top: 0.25rem;
+  overflow: hidden;
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 650;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-section-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.58rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 15px;
+  background: #ffffff;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+}
+
+.dashboard-section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.dashboard-section-heading p {
+  color: #64748b;
+}
+
+.dashboard-loading-state {
+  min-height: 150px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 0.55rem;
+  color: #64748b;
+  text-align: center;
+}
+
+.dashboard-loading-state p {
+  margin: 0;
+  font-weight: 700;
+}
+
+.dashboard-alert-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.dashboard-alert-card {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.dashboard-alert-header {
+  min-height: 62px;
+  padding: 0.68rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.dashboard-alert-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.dashboard-alert-title > div {
+  min-width: 0;
+}
+
+.dashboard-alert-header h4 {
+  overflow: hidden;
+  font-size: 0.92rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-alert-header p {
+  overflow: hidden;
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-alert-icon {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-size: 1rem;
+}
+
+.dashboard-alert-icon--stock {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.dashboard-alert-icon--debt {
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.dashboard-chip {
+  min-width: 30px;
+  height: 26px;
+  padding: 0 0.48rem;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.dashboard-chip--warning {
+  background: #fff7ed;
+  color: #b45309;
+}
+
+.dashboard-chip--danger {
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.dashboard-alert-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-alert-row {
+  width: 100%;
+  min-height: 58px;
+  padding: 0.52rem 0.68rem;
+  appearance: none;
+  border: 0;
+  border-bottom: 1px solid #eef2f7;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 150ms ease, transform 150ms ease;
+}
+
+.dashboard-alert-row:hover {
+  background: #f8fafc;
+}
+
+.dashboard-alert-row:active {
+  transform: scale(0.995);
+}
+
+.dashboard-alert-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.14rem;
+}
+
+.dashboard-alert-copy strong {
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-alert-copy span {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 0.69rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-alert-metric {
+  min-width: 66px;
+  flex: 0 0 auto;
+  padding: 0.38rem 0.46rem;
+  border-radius: 10px;
+  background: #fff7ed;
+  color: #b45309;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.dashboard-alert-metric--danger {
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.dashboard-alert-metric strong {
+  font-size: 0.96rem;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.dashboard-alert-metric span {
+  margin-top: 0.12rem;
+  font-size: 0.58rem;
+  font-weight: 750;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.dashboard-empty-state {
+  min-height: 290px;
+  padding: 1rem;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 0.28rem;
+  color: #64748b;
+  text-align: center;
+}
+
+.dashboard-empty-state ion-icon {
+  font-size: 1.7rem;
+  color: #94a3b8;
+}
+
+.dashboard-empty-state strong {
+  color: #0f172a;
+  font-size: 0.86rem;
+}
+
+.dashboard-empty-state span {
+  font-size: 0.72rem;
+}
+
+.dashboard-card-action {
+  width: 100%;
+  min-height: 38px;
+  appearance: none;
+  border: 0;
+  background: #f8fafc;
+  color: #2563eb;
+  font-size: 0.75rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.dashboard-card-action:hover {
+  background: #eff6ff;
+}
+
+@media (max-width: 760px) {
+  .dashboard-overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-alert-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-empty-state {
+    min-height: 140px;
+  }
+}
+
+@media (max-width: 520px) {
+  .page-container {
+    padding: 0.65rem;
+  }
+
+  .dashboard-page {
+    gap: 0.52rem;
+  }
+
+  .dashboard-hero {
+    flex-direction: column;
+    padding: 0.72rem;
+  }
+
+  .dashboard-hero-actions {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .dashboard-last-update {
+    text-align: left;
+  }
+
+  .dashboard-overview-card {
+    padding: 0.5rem;
+  }
+
+  .dashboard-overview-card strong {
+    font-size: 1.28rem;
+  }
+
+  .dashboard-overview-card small {
+    white-space: normal;
+  }
+
+  .dashboard-section-card {
+    padding: 0.5rem;
+  }
+
+  .dashboard-alert-header {
+    padding: 0.58rem;
+  }
+
+  .dashboard-alert-row {
+    padding: 0.5rem 0.58rem;
+  }
+}
+
 </style>

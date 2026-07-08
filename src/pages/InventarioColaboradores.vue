@@ -279,7 +279,7 @@
               @click="shareLabelToPrinterApp"
             >
               <ion-icon slot="start" :icon="print"></ion-icon>
-              {{ isPrinting ? 'Generando etiqueta...' : 'Imprimir / compartir etiqueta' }}
+              {{ isPrinting ? 'Generando etiqueta...' : 'Imprimir etiqueta' }}
             </ion-button>
             <p v-if="printError" class="field-error">{{ printError }}</p>
           </div>
@@ -667,49 +667,20 @@ const showFeedback = async (message, color = 'success') => {
 
 const isPrinting = ref(false)
 const printError = ref('')
+const notifyPrintResult = async (message, color = 'success') => {
+  await showFeedback(message, color)
+}
 
-const LABEL_WIDTH_MM = 50.8
-const LABEL_HEIGHT_MM = 25.4
-const LABEL_WIDTH_PX = 406
-const LABEL_HEIGHT_PX = 203
+const LABEL_WIDTH_MM = 52
+const LABEL_HEIGHT_MM = 25
+const LABEL_WIDTH_PX = 416
+const LABEL_HEIGHT_PX = 200
 const LABEL_RENDER_SCALE = 2
 
 const safeLabelFileName = (code) => String(code || 'etiqueta')
   .trim()
   .replace(/[^a-zA-Z0-9_-]+/g, '-')
   .replace(/^-+|-+$/g, '') || 'etiqueta'
-
-const mmToPdfPoints = (mm) => (Number(mm || 0) / 25.4) * 72
-
-const buildPdfBase64WithImage = (jpegBase64, imageWidth, imageHeight) => {
-  const pageWidth = mmToPdfPoints(LABEL_WIDTH_MM)
-  const pageHeight = mmToPdfPoints(LABEL_HEIGHT_MM)
-  const imageBinary = atob(jpegBase64)
-  const content = `q\n${pageWidth.toFixed(2)} 0 0 ${pageHeight.toFixed(2)} 0 0 cm\n/Im1 Do\nQ\n`
-  const objects = [
-    '<< /Type /Catalog /Pages 2 0 R >>',
-    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth.toFixed(2)} ${pageHeight.toFixed(2)}] /Resources << /XObject << /Im1 5 0 R >> >> /Contents 4 0 R >>`,
-    `<< /Length ${content.length} >>\nstream\n${content}endstream`,
-    `<< /Type /XObject /Subtype /Image /Width ${imageWidth} /Height ${imageHeight} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imageBinary.length} >>\nstream\n${imageBinary}\nendstream`
-  ]
-
-  let pdf = '%PDF-1.4\n%\xFF\xFF\xFF\xFF\n'
-  const offsets = [0]
-  objects.forEach((object, index) => {
-    offsets[index + 1] = pdf.length
-    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`
-  })
-
-  const xrefOffset = pdf.length
-  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`
-  for (let i = 1; i <= objects.length; i += 1) {
-    pdf += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`
-  }
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`
-
-  return btoa(pdf)
-}
 
 const buildLabelDataUrl = (code, mimeType = 'image/png') => {
   const canvas = document.createElement('canvas')
@@ -723,39 +694,92 @@ const buildLabelDataUrl = (code, mimeType = 'image/png') => {
 
   const barcodeCanvas = document.createElement('canvas')
   barcodeCanvas.width = canvas.width
-  barcodeCanvas.height = Math.round(canvas.height * 0.72)
-  const barcodeCtx = barcodeCanvas.getContext('2d')
+  barcodeCanvas.height = canvas.height
+  const barcodeCtx = barcodeCanvas.getContext('2d', { willReadFrequently: true })
   if (!barcodeCtx) throw new Error('No se pudo crear el lienzo del codigo de barras.')
 
   barcodeCtx.fillStyle = '#ffffff'
   barcodeCtx.fillRect(0, 0, barcodeCanvas.width, barcodeCanvas.height)
 
-  JsBarcode(barcodeCanvas, code, {
+  const trimmedCode = String(code || '').trim()
+  const codeLength = trimmedCode.length
+  const barcodeWidth = codeLength <= 8
+    ? 4.2
+    : codeLength <= 12
+      ? 3.2
+      : codeLength <= 18
+        ? 2.6
+        : codeLength <= 24
+          ? 2.1
+          : 1.7
+
+  JsBarcode(barcodeCanvas, trimmedCode, {
     format: 'CODE128',
     displayValue: false,
-    marginLeft: 24,
-    marginRight: 24,
-    marginTop: 8,
-    marginBottom: 8,
-    height: Math.round(barcodeCanvas.height * 0.82),
-    width: 2.2,
+    margin: 0,
+    marginLeft: 0,
+    marginRight: 0,
+    marginTop: 0,
+    marginBottom: 0,
+    height: Math.round(barcodeCanvas.height * 0.96),
+    width: barcodeWidth,
     lineColor: '#000000',
     background: '#ffffff'
   })
 
+  const sourceImageData = barcodeCtx.getImageData(0, 0, barcodeCanvas.width, barcodeCanvas.height)
+  const sourceData = sourceImageData.data
+  let minX = barcodeCanvas.width
+  let minY = barcodeCanvas.height
+  let maxX = -1
+  let maxY = -1
+
+  for (let y = 0; y < barcodeCanvas.height; y += 1) {
+    for (let x = 0; x < barcodeCanvas.width; x += 1) {
+      const index = (y * barcodeCanvas.width + x) * 4
+      const luminance = 0.299 * sourceData[index] + 0.587 * sourceData[index + 1] + 0.114 * sourceData[index + 2]
+      if (luminance < 245) {
+        if (x < minX) minX = x
+        if (y < minY) minY = y
+        if (x > maxX) maxX = x
+        if (y > maxY) maxY = y
+      }
+    }
+  }
+
+  if (maxX < minX || maxY < minY) {
+    minX = 0
+    minY = 0
+    maxX = barcodeCanvas.width - 1
+    maxY = barcodeCanvas.height - 1
+  }
+
+  const sourceWidth = Math.max(1, maxX - minX + 1)
+  const sourceHeight = Math.max(1, maxY - minY + 1)
+  // Plantilla segura para Ctrl+P en Chrome/Edge.
+  // La vista previa del navegador puede verse correcta, pero al imprimir el driver térmico
+  // aplica su propio área útil. Estos márgenes evitan cortes sin reducir demasiado el barcode.
+  const pxPerMmX = canvas.width / LABEL_WIDTH_MM
+  const pxPerMmY = canvas.height / LABEL_HEIGHT_MM
+  const quietMarginX = Math.round(pxPerMmX * 1.6)
+  const quietMarginTop = Math.round(pxPerMmY * 3.0)
+  const quietMarginBottom = Math.round(pxPerMmY * 2.0)
+  const targetX = quietMarginX
+  const targetY = quietMarginTop
+  const targetWidth = canvas.width - quietMarginX * 2
+  const targetHeight = canvas.height - quietMarginTop - quietMarginBottom
+
   ctx.imageSmoothingEnabled = false
-  const drawHeight = Math.round(canvas.height * 0.72)
-  const drawTop = Math.round((canvas.height - drawHeight) / 2)
   ctx.drawImage(
     barcodeCanvas,
-    0,
-    0,
-    barcodeCanvas.width,
-    barcodeCanvas.height,
-    0,
-    drawTop,
-    canvas.width,
-    drawHeight
+    minX,
+    minY,
+    sourceWidth,
+    sourceHeight,
+    targetX,
+    targetY,
+    targetWidth,
+    targetHeight
   )
 
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
@@ -773,21 +797,188 @@ const buildLabelDataUrl = (code, mimeType = 'image/png') => {
   return canvas.toDataURL(mimeType, 1)
 }
 
-const buildLabelPdfFileUri = async (code) => {
-  const jpegDataUrl = buildLabelDataUrl(code, 'image/jpeg')
-  const jpegBase64 = jpegDataUrl.split(',')[1]
-  if (!jpegBase64) throw new Error('No se pudo generar el PDF de impresión.')
 
-  const pdfBase64 = buildPdfBase64WithImage(
-    jpegBase64,
-    LABEL_WIDTH_PX * LABEL_RENDER_SCALE,
-    LABEL_HEIGHT_PX * LABEL_RENDER_SCALE
-  )
+const buildBarcodeSvgMarkup = (code) => {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  const trimmedCode = String(code || '').trim()
+  const codeLength = trimmedCode.length
+  const barcodeWidth = codeLength <= 8
+    ? 4.2
+    : codeLength <= 12
+      ? 3.2
+      : codeLength <= 18
+        ? 2.6
+        : codeLength <= 24
+          ? 2.1
+          : 1.7
 
-  const fileName = `etiqueta-${safeLabelFileName(code)}-2x1.pdf`
+  JsBarcode(svg, trimmedCode, {
+    format: 'CODE128',
+    displayValue: false,
+    margin: 0,
+    marginLeft: 0,
+    marginRight: 0,
+    marginTop: 0,
+    marginBottom: 0,
+    height: 220,
+    width: barcodeWidth,
+    lineColor: '#000000',
+    background: '#ffffff'
+  })
+
+  svg.setAttribute('preserveAspectRatio', 'none')
+  svg.setAttribute('shape-rendering', 'crispEdges')
+  svg.setAttribute('focusable', 'false')
+  svg.setAttribute('aria-hidden', 'true')
+
+  return new XMLSerializer().serializeToString(svg)
+}
+
+
+const escapeHtml = (value) => String(value || '').replace(/[&<>"']/g, (char) => ({
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;'
+}[char]))
+
+const printLabelInBrowser = (code) => {
+  const svgMarkup = buildBarcodeSvgMarkup(code)
+  const printWindow = window.open('', '_blank', 'width=520,height=360')
+  if (!printWindow) {
+    throw new Error('El navegador bloqueó la ventana de impresión. Permite ventanas emergentes para imprimir etiquetas.')
+  }
+
+  const safeCode = escapeHtml(code)
+  const labelWidth = `${LABEL_WIDTH_MM}mm`
+  const labelHeight = `${LABEL_HEIGHT_MM}mm`
+  printWindow.document.open()
+  printWindow.document.write(`<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Etiqueta ${safeCode}</title>
+  <style>
+    @page {
+      size: ${labelWidth} ${labelHeight};
+      margin: 0;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    html,
+    body {
+      width: ${labelWidth};
+      min-width: ${labelWidth};
+      max-width: ${labelWidth};
+      height: ${labelHeight};
+      min-height: ${labelHeight};
+      max-height: ${labelHeight};
+      margin: 0 !important;
+      padding: 0 !important;
+      overflow: hidden !important;
+      background: #ffffff;
+    }
+
+    body {
+      position: relative;
+    }
+
+    .label {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: ${labelWidth};
+      min-width: ${labelWidth};
+      max-width: ${labelWidth};
+      height: ${labelHeight};
+      min-height: ${labelHeight};
+      max-height: ${labelHeight};
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #ffffff;
+      page-break-after: avoid;
+      break-after: avoid;
+    }
+
+    .barcode-safe-area {
+      position: absolute;
+      left: 2mm;
+      top: 3.2mm;
+      width: calc(${labelWidth} - 4mm);
+      height: calc(${labelHeight} - 5.8mm);
+      overflow: hidden;
+      background: #ffffff;
+    }
+
+    .barcode-safe-area svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+      max-width: none;
+      max-height: none;
+      shape-rendering: crispEdges;
+    }
+
+    .barcode-safe-area svg * {
+      shape-rendering: crispEdges;
+    }
+
+    @media screen {
+      body {
+        outline: 1px dashed #94a3b8;
+      }
+    }
+
+    @media print {
+      html,
+      body,
+      .label {
+        width: ${labelWidth} !important;
+        height: ${labelHeight} !important;
+      }
+
+      .barcode-safe-area {
+        left: 2mm !important;
+        top: 3.2mm !important;
+        width: calc(${labelWidth} - 4mm) !important;
+        height: calc(${labelHeight} - 5.8mm) !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="label">
+    <div class="barcode-safe-area">${svgMarkup}</div>
+  </div>
+  <script>
+    const runPrint = () => {
+      window.focus();
+      window.print();
+    };
+    window.addEventListener('load', () => setTimeout(runPrint, 350));
+  <\/script>
+</body>
+</html>`)
+  printWindow.document.close()
+}
+
+
+const buildLabelPngFileUri = async (code) => {
+  const pngDataUrl = buildLabelDataUrl(code, 'image/png')
+  const pngBase64 = pngDataUrl.split(',')[1]
+  if (!pngBase64) throw new Error('No se pudo generar la imagen de impresión.')
+
+  const fileName = `etiqueta-${safeLabelFileName(code)}-52x25.png`
   const result = await Filesystem.writeFile({
     path: fileName,
-    data: pdfBase64,
+    data: pngBase64,
     directory: Directory.Cache,
     recursive: true
   })
@@ -807,18 +998,29 @@ const shareLabelToPrinterApp = async () => {
   }
 
   if (!Capacitor?.isNativePlatform?.()) {
-    printError.value = 'La impresion solo funciona en la app instalada.'
+    try {
+      isPrinting.value = true
+      printLabelInBrowser(barcode)
+      const successMessage = `Abriendo diálogo de impresión - ${barcode}`
+      await notifyPrintResult(successMessage, 'success')
+    } catch (err) {
+      const errorMsg = err?.message || 'No se pudo abrir la impresión del navegador.'
+      printError.value = errorMsg
+      await notifyPrintResult(errorMsg, 'danger')
+    } finally {
+      isPrinting.value = false
+    }
     return
   }
 
   try {
     isPrinting.value = true
-    const fileUri = await buildLabelPdfFileUri(barcode)
+    const fileUri = await buildLabelPngFileUri(barcode)
     await Share.share({
       title: 'Etiqueta de inventario',
       text: barcode,
       files: [fileUri],
-      dialogTitle: 'Compartir etiqueta con app de impresión'
+      dialogTitle: 'Compartir imagen de etiqueta con app de impresión'
     })
 
     await showFeedback(`Etiqueta lista para imprimir - ${barcode}`, 'success')

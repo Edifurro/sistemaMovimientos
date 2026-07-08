@@ -56,7 +56,7 @@
             <p>Controla préstamos diarios de Oficina y Bodega.</p>
           </div>
           <div class="hero-actions">
-            <ion-button color="success" class="hero-button" @click="openPrestamoModal()">
+            <ion-button color="success" expand="block" class="hero-button" @click="openPrestamoModal()">
               <ion-icon slot="start" :icon="add"></ion-icon>
               Nuevo préstamo diario
             </ion-button>
@@ -69,7 +69,7 @@
             <strong>{{ prestamosSummary.abiertos }}</strong>
           </article>
           <article class="overview-card">
-            <span class="overview-label">Pendientes</span>
+            <span class="overview-label">Por revisar</span>
             <strong>{{ prestamosSummary.pendientes }}</strong>
           </article>
           <article class="overview-card">
@@ -84,8 +84,8 @@
 
         <section class="toolbar-card">
           <div class="toolbar-copy">
-            <h3>{{ selectedSegment === 'adeudos' ? 'Adeudos' : 'Préstamos diarios' }}</h3>
-            <p>{{ selectedSegment === 'adeudos' ? `${adeudosProductos.length} adeudos` : `${filteredPrestamos.length} registros` }}</p>
+            <h3>{{ selectedSegment === 'adeudos' ? 'Adeudos' : selectedSegment === 'revision' ? 'Préstamos por revisar' : 'Préstamos diarios' }}</h3>
+            <p>{{ selectedSegment === 'adeudos' ? `${filteredAdeudos.length} adeudos` : `${filteredPrestamos.length} registros` }}</p>
           </div>
 
           <ion-segment class="modern-segment" v-model="selectedSegment" @ion-change="onSegmentChange" scrollable>
@@ -93,7 +93,7 @@
               <ion-label>Hoy</ion-label>
             </ion-segment-button>
             <ion-segment-button value="revision">
-              <ion-label>Revisión</ion-label>
+              <ion-label>Por revisar</ion-label>
             </ion-segment-button>
             <ion-segment-button value="cerrados">
               <ion-label>Cerrados</ion-label>
@@ -104,7 +104,7 @@
           </ion-segment>
         </section>
 
-        <section v-if="selectedSegment !== 'adeudos'" class="filters-card modern-form-card">
+        <section class="filters-card modern-form-card">
           <div class="filters-grid">
             <ion-item v-if="selectedSegment !== 'hoy'" lines="none">
               <ion-label position="stacked">Fecha</ion-label>
@@ -176,7 +176,7 @@
                       <p>Fecha: {{ prestamo.fechaOperativa || '-' }}</p>
                     </div>
                     <div class="compact-chip-row">
-                      <span class="ui-chip" :class="getPrestamoBadgeClass(prestamo)">{{ prestamo.estado }}</span>
+                      <span class="ui-chip" :class="getPrestamoBadgeClass(prestamo)">{{ getPrestamoEstadoLabel(prestamo) }}</span>
                       <span v-if="prestamoHasAdeudo(prestamo)" class="ui-chip ui-chip--danger">Adeudo</span>
                     </div>
                   </div>
@@ -187,8 +187,8 @@
                       <strong class="work-legend-value">Préstamo diario</strong>
                     </div>
                     <div class="work-legend-row">
-                      <span class="work-legend-key">Caduca</span>
-                      <strong class="work-legend-value">Fin del día</strong>
+                      <span class="work-legend-key">Revisión</span>
+                      <strong class="work-legend-value">{{ prestamo.estado === 'pendiente_revision' ? 'Pendiente de revisar' : 'Disponible hoy' }}</strong>
                     </div>
                     <div class="work-legend-row work-legend-row--trabajo">
                       <span class="work-legend-key">Áreas</span>
@@ -226,8 +226,8 @@
           </section>
 
           <section v-if="selectedSegment === 'adeudos'">
-            <ion-list v-if="adeudosProductos.length" lines="none" class="prestamos-list">
-              <ion-item v-for="adeudo in adeudosProductos" :key="adeudo.id" lines="none" class="prestamo-card adeudo-card">
+            <ion-list v-if="filteredAdeudos.length" lines="none" class="prestamos-list">
+              <ion-item v-for="adeudo in filteredAdeudos" :key="adeudo.id" lines="none" class="prestamo-card adeudo-card">
                 <div class="prestamo-card-content">
                   <div class="prestamo-topline">
                     <div class="prestamo-title-block">
@@ -600,7 +600,7 @@
     <ion-modal :is-open="isDetailModalOpen" css-class="prestamo-modal wide-modal" @did-dismiss="closeDetailModal">
       <ion-header>
         <ion-toolbar color="primary">
-          <ion-title>{{ isReadOnlyDetail ? 'Detalle cerrado' : 'Revisión diaria' }}</ion-title>
+          <ion-title>{{ isReadOnlyDetail ? 'Detalle cerrado' : 'Revisión de devoluciones' }}</ion-title>
           <ion-buttons slot="end">
             <ion-button @click="closeDetailModal" class="close-modal-btn">
               <ion-icon slot="start" :icon="closeOutline"></ion-icon>
@@ -613,13 +613,13 @@
         <div class="modal-form detail-modal-form" v-if="selectedPrestamoDetail">
           <section class="detail-hero">
             <div>
-              <span class="eyebrow">{{ isReadOnlyDetail ? 'Consulta' : 'Liberación' }}</span>
+              <span class="eyebrow">{{ isReadOnlyDetail ? 'Consulta' : 'Revisión física' }}</span>
               <h3>{{ selectedPrestamoDetail.colaboradorNombre }}</h3>
-              <p>Fecha: {{ selectedPrestamoDetail.fechaOperativa }} · Estado: {{ selectedPrestamoDetail.estado }}</p>
+              <p>Fecha: {{ selectedPrestamoDetail.fechaOperativa }} · Estado: {{ getPrestamoEstadoLabel(selectedPrestamoDetail) }}</p>
               <p v-if="selectedPrestamoDetail.observacionGeneral">Obs: {{ selectedPrestamoDetail.observacionGeneral }}</p>
               <p v-if="selectedPrestamoDetail.observacionCierre"><strong>Cierre:</strong> {{ selectedPrestamoDetail.observacionCierre }}</p>
             </div>
-            <span class="ui-chip" :class="getPrestamoBadgeClass(selectedPrestamoDetail)">{{ selectedPrestamoDetail.estado }}</span>
+            <span class="ui-chip" :class="getPrestamoBadgeClass(selectedPrestamoDetail)">{{ getPrestamoEstadoLabel(selectedPrestamoDetail) }}</span>
           </section>
 
           <ion-accordion-group class="modern-accordion detail-product-accordion">
@@ -843,43 +843,10 @@
                           </div>
                         </ion-accordion>
 
-                        <ion-accordion v-if="item.generaAdeudo !== false" :value="`${getDetailKey(item)}-adeudo`" class="release-action-accordion release-action-accordion--danger">
-                          <ion-item slot="header" lines="none" class="release-accordion-header release-accordion-header--danger">
-                            <div class="release-header-content">
-                              <div>
-                                <h4>Adeudo</h4>
-                                <p>Queda pendiente desde {{ getAreaLabel(item.areaOrigen) }}.</p>
-                              </div>
-                              <span class="ui-chip ui-chip--danger">{{ getLiberationQuantity(item, 'cantidadAdeudada') }}</span>
-                            </div>
-                          </ion-item>
-                          <div slot="content" class="release-action-card release-action-card--danger release-action-content">
-                            <div class="release-quantity-row">
-                              <span>Cant.</span>
-                              <div class="release-stepper cart-stepper">
-                                <ion-button fill="clear" class="stepper-btn release-stepper-btn" @click="changeLiberationQuantity(item, 'cantidadAdeudada', -1)">
-                                  <ion-icon slot="icon-only" :icon="remove"></ion-icon>
-                                </ion-button>
-                                <ion-input
-                                  v-model.number="liberationItems[getDetailKey(item)].cantidadAdeudada"
-                                  type="text"
-                                  inputmode="numeric"
-                                  pattern="[0-9]*"
-                                  class="cart-quantity-input release-quantity-input"
-                                  :legacy="true"
-                                  @ionBlur="normalizeLiberationField(item, 'cantidadAdeudada')"
-                                ></ion-input>
-                                <ion-button fill="clear" class="stepper-btn release-stepper-btn" @click="changeLiberationQuantity(item, 'cantidadAdeudada', 1)">
-                                  <ion-icon slot="icon-only" :icon="add"></ion-icon>
-                                </ion-button>
-                              </div>
-                            </div>
-                            <ion-item lines="none" class="release-comment-input">
-                              <ion-label position="stacked">Comentario *</ion-label>
-                              <ion-textarea v-model="liberationItems[getDetailKey(item)].comentarioAdeudo" rows="2" :legacy="true"></ion-textarea>
-                            </ion-item>
-                          </div>
-                        </ion-accordion>
+                        <div class="automatic-debt-hint">
+                          <strong>Adeudo al finalizar</strong>
+                          <p>Después de registrar lo devuelto o consumido, lo que permanezca pendiente se convertirá en adeudo únicamente al finalizar la revisión.</p>
+                        </div>
                       </ion-accordion-group>
                     </div>
                   </ion-accordion>
@@ -907,7 +874,7 @@
           <section v-if="!isReadOnlyDetail" class="closing-card modern-form-card">
             <ion-item lines="none">
               <ion-checkbox v-model="closeDailyLoan" slot="start"></ion-checkbox>
-              <ion-label>Cerrar definitivamente este préstamo diario</ion-label>
+              <ion-label>Finalizar revisión y cerrar este préstamo</ion-label>
             </ion-item>
             <p v-if="closeDailyLoan && getSelectedPrestamoPendingTotal() > 0" class="closure-auto-debt-note">
               Los pendientes se registrarán como adeudo al cerrar.
@@ -922,7 +889,7 @@
       <ion-footer v-if="!isReadOnlyDetail" class="modal-footer">
         <ion-toolbar>
           <ion-button expand="block" class="primary-action" @click="saveLiberacion" :disabled="loading">
-            {{ loading ? 'Guardando...' : 'Guardar cambios' }}
+            {{ loading ? 'Guardando...' : closeDailyLoan ? 'Finalizar revisión' : 'Guardar avances' }}
           </ion-button>
         </ion-toolbar>
       </ion-footer>
@@ -1094,6 +1061,12 @@ const AREAS_TALLER = ['OFICINA', 'BODEGA']
 const AREA_LABELS = { OFICINA: 'Oficina', BODEGA: 'Bodega', SEGUNDO_PISO: 'Segundo Piso' }
 const TIPO_PRESTAMO = 'PRESTAMO'
 
+const getPreviousFechaOperativa = () => {
+  const date = new Date()
+  date.setDate(date.getDate() - 1)
+  return formatFechaOperativa(date)
+}
+
 const listFilters = ref({
   fechaOperativa: formatFechaOperativa(),
   colaboradorId: '',
@@ -1157,6 +1130,20 @@ const filteredPrestamos = computed(() => {
   }
   if (listFilters.value.areaOrigen) {
     result = result.filter((p) => (p.detalles || []).some((d) => normalizeAreaKey(d.areaOrigen) === normalizeAreaKey(listFilters.value.areaOrigen)))
+  }
+  return result
+})
+
+const filteredAdeudos = computed(() => {
+  let result = [...adeudosProductos.value]
+  if (listFilters.value.fechaOperativa) {
+    result = result.filter((adeudo) => adeudo.fechaOperativa === listFilters.value.fechaOperativa)
+  }
+  if (listFilters.value.colaboradorId) {
+    result = result.filter((adeudo) => adeudo.colaboradorId === listFilters.value.colaboradorId)
+  }
+  if (listFilters.value.areaOrigen) {
+    result = result.filter((adeudo) => normalizeAreaKey(adeudo.areaOrigen) === normalizeAreaKey(listFilters.value.areaOrigen))
   }
   return result
 })
@@ -1674,7 +1661,7 @@ const getDetailGroupAreaSummaries = (group) => getDetailGroupAreaEntries(group)
 const prestamosSummary = computed(() => {
   const abiertos = prestamos.value.filter((prestamo) => prestamo.estado === 'abierto').length
   const cerrados = prestamos.value.filter((prestamo) => prestamo.estado === 'cerrado' || prestamo.estado === 'cerrado_con_adeudo').length
-  const pendientes = prestamos.value.reduce((sum, prestamo) => sum + getPrestamoStats(prestamo).pendiente, 0)
+  const pendientes = prestamos.value.filter((prestamo) => prestamo.estado === 'pendiente_revision').length
   const adeudos = adeudosProductos.value.reduce((sum, adeudo) => sum + Number(adeudo.cantidadPendiente || 0), 0)
   return { abiertos, cerrados, pendientes, adeudos }
 })
@@ -1740,9 +1727,17 @@ const getPrestamoResumen = (prestamo) => {
   return `${productos} producto(s) · ${pendiente} unidad(es) pendientes · ${adeudado} adeudadas`
 }
 
+const getPrestamoEstadoLabel = (prestamo) => {
+  if (prestamo?.estado === 'pendiente_revision') return 'Por revisar'
+  if (prestamo?.estado === 'cerrado_con_adeudo') return 'Cerrado con adeudo'
+  if (prestamo?.estado === 'cerrado') return 'Cerrado'
+  return 'Abierto'
+}
+
 const getPrestamoBadgeClass = (prestamo) => {
   if (prestamo.estado === 'cerrado_con_adeudo') return 'prestamo-badge--vencido'
   if (prestamo.estado === 'cerrado') return 'prestamo-badge--devuelto'
+  if (prestamo.estado === 'pendiente_revision') return 'prestamo-badge--revision'
   return 'prestamo-badge--activo'
 }
 
@@ -2032,8 +2027,16 @@ const refreshAll = async () => {
 }
 
 const onSegmentChange = async () => {
-  if (selectedSegment.value === 'hoy') listFilters.value.fechaOperativa = formatFechaOperativa()
-  if (selectedSegment.value === 'revision' && !listFilters.value.fechaOperativa) listFilters.value.fechaOperativa = formatFechaOperativa()
+  listFilters.value.estado = ''
+  if (selectedSegment.value === 'hoy') {
+    listFilters.value.fechaOperativa = formatFechaOperativa()
+  } else if (selectedSegment.value === 'revision') {
+    listFilters.value.fechaOperativa = getPreviousFechaOperativa()
+  } else if (selectedSegment.value === 'adeudos') {
+    listFilters.value.fechaOperativa = getPreviousFechaOperativa()
+  } else {
+    listFilters.value.fechaOperativa = ''
+  }
   await loadSegmentData()
 }
 
@@ -2234,11 +2237,31 @@ onMounted(async () => {
   min-height: 30px;
   --padding-start: 0.46rem;
   --padding-end: 0.46rem;
-  --indicator-color: #2563eb;
-  --color-checked: #0f172a;
+  --background: transparent;
+  --background-checked: transparent;
+  --indicator-color: var(--ion-color-primary, #2563eb);
+  --color: #475569;
+  --color-checked: #475569;
+  color: #475569;
   font-size: 0.64rem;
   font-weight: 800;
   text-transform: none;
+}
+
+.modern-segment ion-segment-button::part(native) {
+  color: #475569 !important;
+  background: transparent !important;
+}
+
+.modern-segment ion-segment-button.segment-button-checked::part(native) {
+  color: #475569 !important;
+  background: transparent !important;
+  font-weight: 900;
+}
+
+.modern-segment ion-segment-button::part(indicator-background) {
+  background: var(--ion-color-primary, #2563eb);
+  border-radius: 999px;
 }
 
 .filters-grid,
@@ -2448,6 +2471,12 @@ onMounted(async () => {
   color: #1d4ed8;
   background: #dbeafe;
   border-color: #bfdbfe;
+}
+
+.prestamo-badge--revision {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fde68a;
 }
 
 .stock-grid {
@@ -5330,7 +5359,7 @@ ion-button {
     width: 100%;
     min-width: 0;
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .hero-button {
@@ -8404,4 +8433,24 @@ ion-button {
   line-height: 1.35;
 }
 
+
+.automatic-debt-hint {
+  margin-top: 0.55rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #fde68a;
+  border-radius: 12px;
+  background: #fffbeb;
+  color: #78350f;
+}
+
+.automatic-debt-hint strong {
+  display: block;
+  margin-bottom: 0.2rem;
+}
+
+.automatic-debt-hint p {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
 </style>

@@ -20,6 +20,7 @@ const loading = ref(false)
 const error = ref(null)
 
 const ESTADO_ABIERTO = 'abierto'
+const ESTADO_PENDIENTE_REVISION = 'pendiente_revision'
 const ESTADO_CERRADO = 'cerrado'
 const ESTADO_CERRADO_CON_ADEUDO = 'cerrado_con_adeudo'
 const TIPO_PRESTAMO = 'PRESTAMO'
@@ -474,7 +475,7 @@ export function usePrestamos() {
   }
 
   const getPrestamosRevision = async (filters = {}) => {
-    return getPrestamos({ ...filters, estado: ESTADO_ABIERTO })
+    return getPrestamos({ ...filters, estado: ESTADO_PENDIENTE_REVISION })
   }
 
   const getPrestamosCerrados = async (filters = {}) => {
@@ -551,7 +552,7 @@ export function usePrestamos() {
         if (!prestamoSnap.exists()) throw new Error('El préstamo no existe')
 
         const prestamoActual = { id: prestamoId, ...prestamoSnap.data() }
-        if (prestamoActual.estado !== ESTADO_ABIERTO && prestamoActual.estado !== 'activo') {
+        if (![ESTADO_ABIERTO, ESTADO_PENDIENTE_REVISION, 'activo'].includes(prestamoActual.estado)) {
           throw new Error('Este préstamo ya está cerrado')
         }
 
@@ -644,7 +645,7 @@ export function usePrestamos() {
 
             const comentarioAdeudoAutomatico = cierreAutomatico
               ? `Adeudo generado automáticamente por caducidad del préstamo diario (${AREA_LABELS[item.areaOrigen] || item.areaOrigen}).`
-              : `Pendiente registrado como adeudo al cierre definitivo (${AREA_LABELS[item.areaOrigen] || item.areaOrigen}).`
+              : `Pendiente registrado como adeudo al finalizar la revisión (${AREA_LABELS[item.areaOrigen] || item.areaOrigen}).`
 
             adeudosToWrite.push({ item, cantidadAdeudada: pendiente, observaciones: comentarioAdeudoAutomatico })
             historialDetalles.push({
@@ -729,14 +730,20 @@ export function usePrestamos() {
           if (pendientes.length) throw new Error('No se pudo cerrar el préstamo: quedan cantidades pendientes que no pudieron convertirse en adeudo.')
           nextEstado = totalAdeudado > 0 ? ESTADO_CERRADO_CON_ADEUDO : ESTADO_CERRADO
           updatePayload.estado = nextEstado
-          updatePayload.observacionCierre = String(payload.observacionCierre || '').trim() || (huboAdeudoAutomaticoPorCierre ? 'Cierre definitivo: los pendientes se registraron como adeudo automáticamente.' : '')
+          updatePayload.observacionCierre = String(payload.observacionCierre || '').trim() || (huboAdeudoAutomaticoPorCierre ? 'Revisión finalizada: los pendientes se registraron como adeudo.' : '')
           updatePayload.cerradoPermanentemente = true
           updatePayload.cerradoAt = nowIso
           updatePayload.cerradoPorUsuarioId = payload.usuarioId || null
           updatePayload.cerradoPorUsuarioNombre = payload.usuarioNombre || (cierreAutomatico ? 'Sistema' : 'Usuario')
-          updatePayload.vencido = cierreAutomatico
+          updatePayload.requiereRevision = false
+          updatePayload.revisionFinalizadaAt = nowIso
+          updatePayload.revisionFinalizadaPorUsuarioId = payload.usuarioId || null
+          updatePayload.revisionFinalizadaPorUsuarioNombre = payload.usuarioNombre || (cierreAutomatico ? 'Sistema' : 'Usuario')
+          updatePayload.vencido = cierreAutomatico || prestamoActual.estado === ESTADO_PENDIENTE_REVISION
         } else {
-          updatePayload.estado = ESTADO_ABIERTO
+          updatePayload.estado = prestamoActual.estado === ESTADO_PENDIENTE_REVISION
+            ? ESTADO_PENDIENTE_REVISION
+            : ESTADO_ABIERTO
         }
 
         transaction.update(prestamoRef, updatePayload)
@@ -752,22 +759,35 @@ export function usePrestamos() {
   }
 
   const procesarPrestamosVencidos = async (fechaCorte = formatFechaOperativa()) => {
-    const snapshot = await getDocs(query(collection(db, PRESTAMOS_COLLECTION), where('estado', '==', ESTADO_ABIERTO)))
+    const snapshot = await getDocs(query(collection(db, PRESTAMOS_COLLECTION), where('estado', 'in', [ESTADO_ABIERTO, 'activo'])))
     const vencidos = snapshot.docs
       .map(mapPrestamoDoc)
       .filter((prestamo) => prestamo.fechaOperativa && prestamo.fechaOperativa < fechaCorte)
 
     for (const prestamo of vencidos) {
       try {
-        await liberarPrestamoDiario(prestamo.id, {
-          cierreDefinitivo: true,
-          cierreAutomatico: true,
-          observacionCierre: 'Cierre automático por caducidad del préstamo diario.',
-          usuarioId: null,
-          usuarioNombre: 'Sistema'
+        const prestamoRef = doc(db, PRESTAMOS_COLLECTION, prestamo.id)
+        await runTransaction(db, async (transaction) => {
+          const currentSnap = await transaction.get(prestamoRef)
+          if (!currentSnap.exists()) return
+
+          const current = currentSnap.data()
+          if (![ESTADO_ABIERTO, 'activo'].includes(current.estado)) return
+          if (!current.fechaOperativa || current.fechaOperativa >= fechaCorte) return
+
+          const nowIso = new Date().toISOString()
+          transaction.update(prestamoRef, {
+            estado: ESTADO_PENDIENTE_REVISION,
+            requiereRevision: true,
+            pendienteRevisionDesde: fechaCorte,
+            marcadoRevisionAt: nowIso,
+            marcadoRevisionPor: 'Sistema',
+            vencido: true,
+            updatedAt: nowIso
+          })
         })
       } catch (err) {
-        console.error('No se pudo cerrar préstamo vencido', prestamo.id, err)
+        console.error('No se pudo marcar préstamo para revisión', prestamo.id, err)
       }
     }
 
@@ -800,7 +820,8 @@ export function usePrestamos() {
   const getPendientes = async () => getPrestamosRevision()
 
   const getVencidos = async (fechaCorte = formatFechaOperativa()) => {
-    const snapshot = await getDocs(query(collection(db, PRESTAMOS_COLLECTION), where('estado', '==', ESTADO_ABIERTO)))
+    await procesarPrestamosVencidos(fechaCorte)
+    const snapshot = await getDocs(query(collection(db, PRESTAMOS_COLLECTION), where('estado', '==', ESTADO_PENDIENTE_REVISION)))
     return snapshot.docs.map(mapPrestamoDoc).filter((prestamo) => prestamo.fechaOperativa && prestamo.fechaOperativa < fechaCorte)
   }
 
@@ -827,6 +848,10 @@ export function usePrestamos() {
     AREAS_TALLER,
     AREA_LABELS,
     TIPO_PRESTAMO,
-    TIPO_ENTREGA_SIN_ADEUDO
+    TIPO_ENTREGA_SIN_ADEUDO,
+    ESTADO_ABIERTO,
+    ESTADO_PENDIENTE_REVISION,
+    ESTADO_CERRADO,
+    ESTADO_CERRADO_CON_ADEUDO
   }
 }

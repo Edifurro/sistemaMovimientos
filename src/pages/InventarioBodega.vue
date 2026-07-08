@@ -126,7 +126,7 @@
               class="print-barcode-button"
               :disabled="isPrinting"
               color="primary"
-              @click="shareLabelToTinyPrint"
+              @click="shareLabelToPrinterApp"
             >
               <ion-icon slot="start" :icon="print"></ion-icon>
               {{ isPrinting ? 'Generando etiqueta...' : 'Imprimir etiqueta' }}
@@ -290,12 +290,22 @@ const generateBarcode = async () => {
 
 const isPrinting = ref(false)
 const printError = ref('')
+const notifyPrintResult = async (message, color = 'success') => {
+  await showFeedback(message, color)
+}
 
-const LABEL_WIDTH_PX = 320
-const LABEL_HEIGHT_PX = 160
-const LABEL_RENDER_SCALE = 3
+const LABEL_WIDTH_MM = 52
+const LABEL_HEIGHT_MM = 25
+const LABEL_WIDTH_PX = 416
+const LABEL_HEIGHT_PX = 200
+const LABEL_RENDER_SCALE = 2
 
-const buildLabelDataUrl = (code) => {
+const safeLabelFileName = (code) => String(code || 'etiqueta')
+  .trim()
+  .replace(/[^a-zA-Z0-9_-]+/g, '-')
+  .replace(/^-+|-+$/g, '') || 'etiqueta'
+
+const buildLabelDataUrl = (code, mimeType = 'image/png') => {
   const canvas = document.createElement('canvas')
   canvas.width = LABEL_WIDTH_PX * LABEL_RENDER_SCALE
   canvas.height = LABEL_HEIGHT_PX * LABEL_RENDER_SCALE
@@ -306,51 +316,94 @@ const buildLabelDataUrl = (code) => {
   ctx.fillRect(0, 0, canvas.width, canvas.height)
 
   const barcodeCanvas = document.createElement('canvas')
-  barcodeCanvas.width = LABEL_WIDTH_PX * LABEL_RENDER_SCALE
-  barcodeCanvas.height = 104 * LABEL_RENDER_SCALE
-  const barcodeCtx = barcodeCanvas.getContext('2d')
+  barcodeCanvas.width = canvas.width
+  barcodeCanvas.height = canvas.height
+  const barcodeCtx = barcodeCanvas.getContext('2d', { willReadFrequently: true })
   if (!barcodeCtx) throw new Error('No se pudo crear el lienzo del codigo de barras.')
 
   barcodeCtx.fillStyle = '#ffffff'
   barcodeCtx.fillRect(0, 0, barcodeCanvas.width, barcodeCanvas.height)
 
-  JsBarcode(barcodeCanvas, code, {
+  const trimmedCode = String(code || '').trim()
+  const codeLength = trimmedCode.length
+  const barcodeWidth = codeLength <= 8
+    ? 4.2
+    : codeLength <= 12
+      ? 3.2
+      : codeLength <= 18
+        ? 2.6
+        : codeLength <= 24
+          ? 2.1
+          : 1.7
+
+  JsBarcode(barcodeCanvas, trimmedCode, {
     format: 'CODE128',
     displayValue: false,
-    marginLeft: 34,
-    marginRight: 34,
-    marginTop: 8,
-    marginBottom: 8,
-    height: 86 * LABEL_RENDER_SCALE,
-    width: 2.4,
+    margin: 0,
+    marginLeft: 0,
+    marginRight: 0,
+    marginTop: 0,
+    marginBottom: 0,
+    height: Math.round(barcodeCanvas.height * 0.96),
+    width: barcodeWidth,
     lineColor: '#000000',
     background: '#ffffff'
   })
 
+  const sourceImageData = barcodeCtx.getImageData(0, 0, barcodeCanvas.width, barcodeCanvas.height)
+  const sourceData = sourceImageData.data
+  let minX = barcodeCanvas.width
+  let minY = barcodeCanvas.height
+  let maxX = -1
+  let maxY = -1
+
+  for (let y = 0; y < barcodeCanvas.height; y += 1) {
+    for (let x = 0; x < barcodeCanvas.width; x += 1) {
+      const index = (y * barcodeCanvas.width + x) * 4
+      const luminance = 0.299 * sourceData[index] + 0.587 * sourceData[index + 1] + 0.114 * sourceData[index + 2]
+      if (luminance < 245) {
+        if (x < minX) minX = x
+        if (y < minY) minY = y
+        if (x > maxX) maxX = x
+        if (y > maxY) maxY = y
+      }
+    }
+  }
+
+  if (maxX < minX || maxY < minY) {
+    minX = 0
+    minY = 0
+    maxX = barcodeCanvas.width - 1
+    maxY = barcodeCanvas.height - 1
+  }
+
+  const sourceWidth = Math.max(1, maxX - minX + 1)
+  const sourceHeight = Math.max(1, maxY - minY + 1)
+  // Plantilla segura para Ctrl+P en Chrome/Edge.
+  // La vista previa del navegador puede verse correcta, pero al imprimir el driver térmico
+  // aplica su propio área útil. Estos márgenes evitan cortes sin reducir demasiado el barcode.
+  const pxPerMmX = canvas.width / LABEL_WIDTH_MM
+  const pxPerMmY = canvas.height / LABEL_HEIGHT_MM
+  const quietMarginX = Math.round(pxPerMmX * 1.6)
+  const quietMarginTop = Math.round(pxPerMmY * 3.0)
+  const quietMarginBottom = Math.round(pxPerMmY * 2.0)
+  const targetX = quietMarginX
+  const targetY = quietMarginTop
+  const targetWidth = canvas.width - quietMarginX * 2
+  const targetHeight = canvas.height - quietMarginTop - quietMarginBottom
+
   ctx.imageSmoothingEnabled = false
-  // Añadir 1.5 cm extra de margen superior (previos 1.0cm + 0.5cm adicional)
-  // y 1.0 cm extra de margen derecho (previos 0.5cm + 0.5cm adicional) para ajustar la etiqueta física.
-  const extraTopMarginCm = 1.5
-  const extraRightMarginCm = 0.8
-  const pxPerCm = 96 / 2.54
-  const extraTopMarginPx = Math.round(extraTopMarginCm * pxPerCm * LABEL_RENDER_SCALE)
-  const extraRightMarginPx = Math.round(extraRightMarginCm * pxPerCm * LABEL_RENDER_SCALE)
-
-  const destWidth = Math.max(0, canvas.width - extraRightMarginPx)
-
   ctx.drawImage(
     barcodeCanvas,
-    0,
-    0,
-    barcodeCanvas.width,
-    barcodeCanvas.height,
-    0,
-    8 * LABEL_RENDER_SCALE + extraTopMarginPx,
-    destWidth,
-    104 * LABEL_RENDER_SCALE
+    minX,
+    minY,
+    sourceWidth,
+    sourceHeight,
+    targetX,
+    targetY,
+    targetWidth,
+    targetHeight
   )
-
-  // No dibujar el texto del código debajo del barcode (sólo la imagen)
 
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
   const data = imageData.data
@@ -364,18 +417,191 @@ const buildLabelDataUrl = (code) => {
   }
   ctx.putImageData(imageData, 0, 0)
 
-  return canvas.toDataURL('image/png')
+  return canvas.toDataURL(mimeType, 1)
 }
 
-const buildLabelFileUri = async (code) => {
-  const dataUrl = buildLabelDataUrl(code)
-  const base64Data = dataUrl.split(',')[1]
-  if (!base64Data) throw new Error('No se pudo generar la imagen de impresión.')
 
-  const fileName = `tinyprint-${code}.png`
+const buildBarcodeSvgMarkup = (code) => {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  const trimmedCode = String(code || '').trim()
+  const codeLength = trimmedCode.length
+  const barcodeWidth = codeLength <= 8
+    ? 4.2
+    : codeLength <= 12
+      ? 3.2
+      : codeLength <= 18
+        ? 2.6
+        : codeLength <= 24
+          ? 2.1
+          : 1.7
+
+  JsBarcode(svg, trimmedCode, {
+    format: 'CODE128',
+    displayValue: false,
+    margin: 0,
+    marginLeft: 0,
+    marginRight: 0,
+    marginTop: 0,
+    marginBottom: 0,
+    height: 220,
+    width: barcodeWidth,
+    lineColor: '#000000',
+    background: '#ffffff'
+  })
+
+  svg.setAttribute('preserveAspectRatio', 'none')
+  svg.setAttribute('shape-rendering', 'crispEdges')
+  svg.setAttribute('focusable', 'false')
+  svg.setAttribute('aria-hidden', 'true')
+
+  return new XMLSerializer().serializeToString(svg)
+}
+
+
+const escapeHtml = (value) => String(value || '').replace(/[&<>"']/g, (char) => ({
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;'
+}[char]))
+
+const printLabelInBrowser = (code) => {
+  const svgMarkup = buildBarcodeSvgMarkup(code)
+  const printWindow = window.open('', '_blank', 'width=520,height=360')
+  if (!printWindow) {
+    throw new Error('El navegador bloqueó la ventana de impresión. Permite ventanas emergentes para imprimir etiquetas.')
+  }
+
+  const safeCode = escapeHtml(code)
+  const labelWidth = `${LABEL_WIDTH_MM}mm`
+  const labelHeight = `${LABEL_HEIGHT_MM}mm`
+  printWindow.document.open()
+  printWindow.document.write(`<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Etiqueta ${safeCode}</title>
+  <style>
+    @page {
+      size: ${labelWidth} ${labelHeight};
+      margin: 0;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    html,
+    body {
+      width: ${labelWidth};
+      min-width: ${labelWidth};
+      max-width: ${labelWidth};
+      height: ${labelHeight};
+      min-height: ${labelHeight};
+      max-height: ${labelHeight};
+      margin: 0 !important;
+      padding: 0 !important;
+      overflow: hidden !important;
+      background: #ffffff;
+    }
+
+    body {
+      position: relative;
+    }
+
+    .label {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: ${labelWidth};
+      min-width: ${labelWidth};
+      max-width: ${labelWidth};
+      height: ${labelHeight};
+      min-height: ${labelHeight};
+      max-height: ${labelHeight};
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #ffffff;
+      page-break-after: avoid;
+      break-after: avoid;
+    }
+
+    .barcode-safe-area {
+      position: absolute;
+      left: 2mm;
+      top: 3.2mm;
+      width: calc(${labelWidth} - 4mm);
+      height: calc(${labelHeight} - 5.8mm);
+      overflow: hidden;
+      background: #ffffff;
+    }
+
+    .barcode-safe-area svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+      max-width: none;
+      max-height: none;
+      shape-rendering: crispEdges;
+    }
+
+    .barcode-safe-area svg * {
+      shape-rendering: crispEdges;
+    }
+
+    @media screen {
+      body {
+        outline: 1px dashed #94a3b8;
+      }
+    }
+
+    @media print {
+      html,
+      body,
+      .label {
+        width: ${labelWidth} !important;
+        height: ${labelHeight} !important;
+      }
+
+      .barcode-safe-area {
+        left: 2mm !important;
+        top: 3.2mm !important;
+        width: calc(${labelWidth} - 4mm) !important;
+        height: calc(${labelHeight} - 5.8mm) !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="label">
+    <div class="barcode-safe-area">${svgMarkup}</div>
+  </div>
+  <script>
+    const runPrint = () => {
+      window.focus();
+      window.print();
+    };
+    window.addEventListener('load', () => setTimeout(runPrint, 350));
+  <\/script>
+</body>
+</html>`)
+  printWindow.document.close()
+}
+
+
+const buildLabelPngFileUri = async (code) => {
+  const pngDataUrl = buildLabelDataUrl(code, 'image/png')
+  const pngBase64 = pngDataUrl.split(',')[1]
+  if (!pngBase64) throw new Error('No se pudo generar la imagen de impresión.')
+
+  const fileName = `etiqueta-${safeLabelFileName(code)}-52x25.png`
   const result = await Filesystem.writeFile({
     path: fileName,
-    data: base64Data,
+    data: pngBase64,
     directory: Directory.Cache,
     recursive: true
   })
@@ -383,8 +609,9 @@ const buildLabelFileUri = async (code) => {
   return result.uri
 }
 
-const shareLabelToTinyPrint = async () => {
+const shareLabelToPrinterApp = async () => {
   printError.value = ''
+
   if (!isEditing.value) return
 
   const barcode = (formData.value.barcode || '').trim()
@@ -394,21 +621,32 @@ const shareLabelToTinyPrint = async () => {
   }
 
   if (!Capacitor?.isNativePlatform?.()) {
-    printError.value = 'La impresion solo funciona en la app instalada.'
+    try {
+      isPrinting.value = true
+      printLabelInBrowser(barcode)
+      const successMessage = `Abriendo diálogo de impresión - ${barcode}`
+      await notifyPrintResult(successMessage, 'success')
+    } catch (err) {
+      const errorMsg = err?.message || 'No se pudo abrir la impresión del navegador.'
+      printError.value = errorMsg
+      await notifyPrintResult(errorMsg, 'danger')
+    } finally {
+      isPrinting.value = false
+    }
     return
   }
 
   try {
     isPrinting.value = true
-    const fileUri = await buildLabelFileUri(barcode)
+    const fileUri = await buildLabelPngFileUri(barcode)
     await Share.share({
       title: 'Etiqueta de inventario',
       text: barcode,
       files: [fileUri],
-      dialogTitle: 'Compartir etiqueta con TinyPrint'
+      dialogTitle: 'Compartir imagen de etiqueta con app de impresión'
     })
 
-    showFeedback(`Etiqueta enviada - ${barcode}`, 'success')
+    showFeedback(`Etiqueta lista para imprimir - ${barcode}`, 'success')
   } catch (err) {
     const errorMsg = err?.message || 'No se pudo generar la etiqueta.'
     if (!errorMsg.includes('cancel') && !errorMsg.includes('dismiss')) {
