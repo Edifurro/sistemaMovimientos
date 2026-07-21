@@ -453,6 +453,8 @@ export function usePrestamos() {
       let result = snapshot.docs.map(mapPrestamoDoc)
 
       if (filters.fechaOperativa) result = result.filter((p) => p.fechaOperativa === filters.fechaOperativa)
+      if (filters.fechaInicio) result = result.filter((p) => String(p.fechaOperativa || '') >= String(filters.fechaInicio))
+      if (filters.fechaFin) result = result.filter((p) => String(p.fechaOperativa || '') <= String(filters.fechaFin))
       if (filters.colaboradorId) result = result.filter((p) => p.colaboradorId === filters.colaboradorId)
       if (filters.estado) result = result.filter((p) => p.estado === filters.estado)
       if (filters.areaOrigen) {

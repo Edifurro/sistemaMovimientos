@@ -84,13 +84,13 @@
 
         <section class="toolbar-card">
           <div class="toolbar-copy">
-            <h3>{{ selectedSegment === 'adeudos' ? 'Adeudos' : selectedSegment === 'revision' ? 'Préstamos por revisar' : 'Préstamos diarios' }}</h3>
+            <h3>{{ selectedSegment === 'adeudos' ? 'Adeudos' : selectedSegment === 'hoy' ? 'Préstamos diarios' : selectedSegment === 'revision' ? 'Préstamos por revisar' : 'Préstamos cerrados' }}</h3>
             <p>{{ selectedSegment === 'adeudos' ? `${filteredAdeudos.length} adeudos` : `${filteredPrestamos.length} registros` }}</p>
           </div>
 
           <ion-segment class="modern-segment" v-model="selectedSegment" @ion-change="onSegmentChange" scrollable>
             <ion-segment-button value="hoy">
-              <ion-label>Hoy</ion-label>
+              <ion-label>Préstamos diarios</ion-label>
             </ion-segment-button>
             <ion-segment-button value="revision">
               <ion-label>Por revisar</ion-label>
@@ -107,8 +107,13 @@
         <section class="filters-card modern-form-card">
           <div class="filters-grid">
             <ion-item v-if="selectedSegment !== 'hoy'" lines="none">
-              <ion-label position="stacked">Fecha</ion-label>
-              <ion-input v-model="listFilters.fechaOperativa" type="date" :legacy="true"></ion-input>
+              <ion-label position="stacked">Desde</ion-label>
+              <ion-input v-model="listFilters.fechaInicio" type="date" :legacy="true"></ion-input>
+            </ion-item>
+
+            <ion-item v-if="selectedSegment !== 'hoy'" lines="none">
+              <ion-label position="stacked">Hasta</ion-label>
+              <ion-input v-model="listFilters.fechaFin" type="date" :legacy="true"></ion-input>
             </ion-item>
 
             <ion-item lines="none">
@@ -221,7 +226,7 @@
             </ion-list>
 
             <div v-else class="empty-state modern-state">
-              <p>No hay registros.</p>
+              <p>{{ selectedSegment === 'hoy' ? 'No hay préstamos diarios registrados hoy.' : 'No hay registros.' }}</p>
             </div>
           </section>
 
@@ -623,7 +628,8 @@
           </section>
 
           <ion-accordion-group class="modern-accordion detail-product-accordion">
-            <ion-accordion v-for="group in detailProductGroups" :key="group.productoId" :value="group.productoId" class="detail-product-card">
+            <ion-accordion v-for="group in detailProductGroups" :key="group.productoId" :value="group.productoId" class="detail-product-card"
+              :class="{ 'detail-product-card--resolved': getDetailGroupStats(group).pendiente <= 0 }">
               <ion-item slot="header" lines="none" class="accordion-card detail-product-header">
                 <div class="accordion-header-content">
                   <div class="prestamo-topline">
@@ -631,7 +637,12 @@
                       <h3>{{ group.productoNombre }}</h3>
                       <p>{{ getDetailGroupStats(group).areas }} área(s) · Total {{ getDetailGroupStats(group).total }} · Pendiente {{ getDetailGroupStats(group).pendiente }}</p>
                     </div>
-                    <span class="ui-chip ui-chip--muted">{{ getControlLabel(group.sample) }}</span>
+                    <span
+                      class="ui-chip"
+                      :class="getDetailGroupStats(group).pendiente <= 0 ? 'ui-chip--muted' : 'ui-chip--warning'"
+                    >
+                      {{ getDetailGroupStats(group).pendiente <= 0 ? 'Resuelto' : getControlLabel(group.sample) }}
+                    </span>
                   </div>
 
                   <div class="detail-area-chip-row">
@@ -691,6 +702,7 @@
                     :key="getDetailKey(item)"
                     :value="`area-${getDetailKey(item)}`"
                     class="area-review-accordion"
+                    :class="{ 'area-review-accordion--resolved': isDetalleResolved(item) }"
                   >
                     <ion-item slot="header" lines="none" class="area-review-header">
                       <div class="area-review-header-content">
@@ -728,7 +740,32 @@
                         </div>
                       </div>
 
-                      <ion-accordion-group v-if="!isReadOnlyDetail" class="release-accordion-group" :multiple="true">
+                      <div v-if="!isReadOnlyDetail && !isDetalleResolved(item)" class="quick-review-actions">
+                        <button type="button" class="quick-review-button quick-review-button--success" @click="setLiberationQuickAction(item, 'cantidadDevuelta')">
+                          Todo devuelto
+                        </button>
+                        <button
+                          v-if="item.categoriaControl === 'FRACCIONABLE'"
+                          type="button"
+                          class="quick-review-button quick-review-button--primary"
+                          @click="setLiberationQuickAction(item, 'cantidadDevueltaComoEmpezado')"
+                        >
+                          Todo empezado
+                        </button>
+                        <button type="button" class="quick-review-button quick-review-button--warning" @click="setLiberationQuickAction(item, 'cantidadConsumida')">
+                          Todo consumido
+                        </button>
+                        <button type="button" class="quick-review-button quick-review-button--clear" @click="clearLiberationQuickAction(item)">
+                          Limpiar
+                        </button>
+                      </div>
+
+                      <div v-if="!isReadOnlyDetail && isDetalleResolved(item)" class="resolved-review-note">
+                        <strong>Producto resuelto</strong>
+                        <span>Este registro ya no tiene cantidades pendientes.</span>
+                      </div>
+
+                      <ion-accordion-group v-if="!isReadOnlyDetail && !isDetalleResolved(item)" class="release-accordion-group release-accordion-group--large" :multiple="true">
                         <ion-accordion :value="`${getDetailKey(item)}-devuelto-nuevo`" class="release-action-accordion">
                           <ion-item slot="header" lines="none" class="release-accordion-header">
                             <div class="release-header-content">
@@ -1039,7 +1076,7 @@ const {
   saldarAdeudoProducto
 } = useAdeudosProductos()
 
-const selectedSegment = ref('hoy')
+const selectedSegment = ref('revision')
 const isModulesMenuOpen = ref(false)
 const isPrestamoModalOpen = ref(false)
 const isProductPickerOpen = ref(false)
@@ -1061,18 +1098,33 @@ const AREAS_TALLER = ['OFICINA', 'BODEGA']
 const AREA_LABELS = { OFICINA: 'Oficina', BODEGA: 'Bodega', SEGUNDO_PISO: 'Segundo Piso' }
 const TIPO_PRESTAMO = 'PRESTAMO'
 
-const getPreviousFechaOperativa = () => {
-  const date = new Date()
-  date.setDate(date.getDate() - 1)
-  return formatFechaOperativa(date)
+const getCurrentMonthRange = () => {
+  const now = new Date()
+  const start = new Date(now.getFullYear(), now.getMonth(), 1)
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+  return {
+    fechaInicio: formatFechaOperativa(start),
+    fechaFin: formatFechaOperativa(end)
+  }
 }
 
 const listFilters = ref({
-  fechaOperativa: formatFechaOperativa(),
+  ...getCurrentMonthRange(),
   colaboradorId: '',
   estado: '',
   areaOrigen: ''
 })
+
+const normalizeDateRangeFilters = () => {
+  const range = getCurrentMonthRange()
+  if (!listFilters.value.fechaInicio) listFilters.value.fechaInicio = range.fechaInicio
+  if (!listFilters.value.fechaFin) listFilters.value.fechaFin = range.fechaFin
+  if (listFilters.value.fechaInicio > listFilters.value.fechaFin) {
+    const temp = listFilters.value.fechaInicio
+    listFilters.value.fechaInicio = listFilters.value.fechaFin
+    listFilters.value.fechaFin = temp
+  }
+}
 
 const newPrestamo = ref({
   tipoOperacion: TIPO_PRESTAMO,
@@ -1120,8 +1172,19 @@ const normalizeLocalSearch = (value) => String(value || '')
   .toLowerCase()
   .trim()
 
+const isInDateRange = (fechaOperativa) => {
+  const fecha = String(fechaOperativa || '')
+  if (!fecha) return false
+  if (listFilters.value.fechaInicio && fecha < listFilters.value.fechaInicio) return false
+  if (listFilters.value.fechaFin && fecha > listFilters.value.fechaFin) return false
+  return true
+}
+
 const filteredPrestamos = computed(() => {
   let result = [...prestamos.value]
+  if (selectedSegment.value !== 'hoy') {
+    result = result.filter((p) => isInDateRange(p.fechaOperativa))
+  }
   if (listFilters.value.colaboradorId) {
     result = result.filter((p) => p.colaboradorId === listFilters.value.colaboradorId)
   }
@@ -1136,9 +1199,7 @@ const filteredPrestamos = computed(() => {
 
 const filteredAdeudos = computed(() => {
   let result = [...adeudosProductos.value]
-  if (listFilters.value.fechaOperativa) {
-    result = result.filter((adeudo) => adeudo.fechaOperativa === listFilters.value.fechaOperativa)
-  }
+  result = result.filter((adeudo) => isInDateRange(adeudo.fechaOperativa))
   if (listFilters.value.colaboradorId) {
     result = result.filter((adeudo) => adeudo.colaboradorId === listFilters.value.colaboradorId)
   }
@@ -1594,6 +1655,9 @@ const getDetalleStats = (item) => ({
   empezados: Number(item?.cantidadDesdeStockEmpezado || 0)
 })
 
+const isDetalleResolved = (item) => getDetalleStats(item).pendiente <= 0
+const getResolvedSortWeight = (item) => isDetalleResolved(item) ? 1 : 0
+
 const detailProductGroups = computed(() => {
   const detalles = selectedPrestamoDetail.value?.detalles || []
   const groups = new Map()
@@ -1612,15 +1676,31 @@ const detailProductGroups = computed(() => {
   })
 
   return Array.from(groups.values())
-    .map((group) => ({
-      ...group,
-      items: group.items.sort((a, b) => AREAS_TALLER.indexOf(normalizeAreaKey(a.areaOrigen)) - AREAS_TALLER.indexOf(normalizeAreaKey(b.areaOrigen)))
-    }))
-    .sort((a, b) => String(a.productoNombre).localeCompare(String(b.productoNombre), 'es'))
+    .map((group) => {
+      const stats = getDetailGroupStats(group)
+      return {
+        ...group,
+        stats,
+        resolved: stats.pendiente <= 0,
+        items: group.items.sort((a, b) => {
+          const resolvedDiff = getResolvedSortWeight(a) - getResolvedSortWeight(b)
+          if (resolvedDiff) return resolvedDiff
+          return AREAS_TALLER.indexOf(normalizeAreaKey(a.areaOrigen)) - AREAS_TALLER.indexOf(normalizeAreaKey(b.areaOrigen))
+        })
+      }
+    })
+    .sort((a, b) => {
+      if (a.resolved !== b.resolved) return a.resolved ? 1 : -1
+      return String(a.productoNombre).localeCompare(String(b.productoNombre), 'es')
+    })
 })
 
 const getDetailGroupAreaEntries = (group) => [...(group?.items || [])]
-  .sort((a, b) => AREAS_TALLER.indexOf(normalizeAreaKey(a.areaOrigen)) - AREAS_TALLER.indexOf(normalizeAreaKey(b.areaOrigen)))
+  .sort((a, b) => {
+    const resolvedDiff = getResolvedSortWeight(a) - getResolvedSortWeight(b)
+    if (resolvedDiff) return resolvedDiff
+    return AREAS_TALLER.indexOf(normalizeAreaKey(a.areaOrigen)) - AREAS_TALLER.indexOf(normalizeAreaKey(b.areaOrigen))
+  })
 
 const getDetailGroupStats = (group) => {
   const items = group?.items || []
@@ -1706,6 +1786,24 @@ const changeLiberationQuantity = (item, field, delta) => {
   if (!item?.productoId || !liberationItems.value[key]) return
   liberationItems.value[key][field] = Number(liberationItems.value[key][field] || 0) + Number(delta || 0)
   normalizeLiberationField(item, field)
+}
+
+const setLiberationQuickAction = (item, field) => {
+  const key = getDetailKey(item || {})
+  if (!item?.productoId || !liberationItems.value[key]) return
+  for (const quantityField of liberationQuantityFields) {
+    liberationItems.value[key][quantityField] = 0
+  }
+  liberationItems.value[key][field] = Math.max(0, Number(getCantidadPendiente(item || {}) || 0))
+  normalizeLiberationField(item, field)
+}
+
+const clearLiberationQuickAction = (item) => {
+  const key = getDetailKey(item || {})
+  if (!item?.productoId || !liberationItems.value[key]) return
+  for (const quantityField of liberationQuantityFields) {
+    liberationItems.value[key][quantityField] = 0
+  }
 }
 
 const normalizeAdeudoQuantity = () => {
@@ -1999,12 +2097,16 @@ const openBarcodeScanner = async () => {
   }
 }
 
-const buildListFilters = () => ({
-  fechaOperativa: listFilters.value.fechaOperativa || undefined,
-  colaboradorId: listFilters.value.colaboradorId || undefined,
-  estado: listFilters.value.estado || undefined,
-  areaOrigen: listFilters.value.areaOrigen || undefined
-})
+const buildListFilters = () => {
+  normalizeDateRangeFilters()
+  return {
+    fechaInicio: listFilters.value.fechaInicio || undefined,
+    fechaFin: listFilters.value.fechaFin || undefined,
+    colaboradorId: listFilters.value.colaboradorId || undefined,
+    estado: listFilters.value.estado || undefined,
+    areaOrigen: listFilters.value.areaOrigen || undefined
+  }
+}
 
 const loadSegmentData = async () => {
   formError.value = ''
@@ -2021,6 +2123,7 @@ const loadSegmentData = async () => {
 }
 
 const refreshAll = async () => {
+  normalizeDateRangeFilters()
   await Promise.all([getProducts(), getColaboradores()])
   await loadSegmentData()
   if (selectedSegment.value !== 'adeudos') await getAdeudosPendientes().catch(() => {})
@@ -2028,15 +2131,7 @@ const refreshAll = async () => {
 
 const onSegmentChange = async () => {
   listFilters.value.estado = ''
-  if (selectedSegment.value === 'hoy') {
-    listFilters.value.fechaOperativa = formatFechaOperativa()
-  } else if (selectedSegment.value === 'revision') {
-    listFilters.value.fechaOperativa = getPreviousFechaOperativa()
-  } else if (selectedSegment.value === 'adeudos') {
-    listFilters.value.fechaOperativa = getPreviousFechaOperativa()
-  } else {
-    listFilters.value.fechaOperativa = ''
-  }
+  if (selectedSegment.value !== 'hoy') normalizeDateRangeFilters()
   await loadSegmentData()
 }
 
@@ -8453,4 +8548,164 @@ ion-button {
   font-size: 0.78rem;
   line-height: 1.35;
 }
+
+/* Mejoras de revisión por rango y captura rápida */
+.filters-grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.detail-product-card--resolved {
+  opacity: 0.72;
+  filter: grayscale(0.25);
+}
+
+.detail-product-card--resolved .detail-product-header,
+.area-review-accordion--resolved .area-review-header,
+.area-review-accordion--resolved .area-review-content {
+  background: #f1f5f9 !important;
+}
+
+.detail-product-card--resolved .prestamo-title-block h3,
+.area-review-accordion--resolved h4 {
+  color: #64748b;
+}
+
+.area-review-accordion--resolved {
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.quick-review-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin: 0 0 0.65rem;
+}
+
+.quick-review-button {
+  min-height: 46px;
+  padding: 0.55rem 0.5rem;
+  border: 1px solid #dbe3ee;
+  border-radius: 13px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 0.78rem;
+  font-weight: 850;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+}
+
+.quick-review-button:active {
+  transform: scale(0.98);
+}
+
+.quick-review-button--success {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.quick-review-button--primary {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.quick-review-button--warning {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.quick-review-button--clear {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.resolved-review-note {
+  display: flex;
+  flex-direction: column;
+  gap: 0.16rem;
+  margin: 0 0 0.55rem;
+  padding: 0.7rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 13px;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.resolved-review-note strong {
+  color: #334155;
+  font-size: 0.86rem;
+}
+
+.resolved-review-note span {
+  font-size: 0.75rem;
+}
+
+.release-accordion-group--large {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.release-accordion-group--large .release-action-accordion {
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.release-accordion-group--large .release-accordion-header {
+  --min-height: 62px;
+}
+
+.release-accordion-group--large .release-action-content {
+  padding: 0.8rem;
+}
+
+.release-accordion-group--large .release-quantity-row {
+  min-height: 58px;
+  align-items: center;
+}
+
+.release-accordion-group--large .release-quantity-row > span {
+  font-size: 0.86rem;
+  font-weight: 850;
+}
+
+.release-accordion-group--large .release-stepper {
+  min-width: 170px;
+  min-height: 48px;
+}
+
+.release-accordion-group--large .release-stepper-btn {
+  width: 48px;
+  height: 48px;
+}
+
+.release-accordion-group--large .release-quantity-input {
+  min-width: 64px;
+  font-size: 1.05rem;
+  font-weight: 900;
+  text-align: center;
+}
+
+@media (max-width: 620px) {
+  .quick-review-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .release-accordion-group--large .release-stepper {
+    min-width: 150px;
+  }
+}
+
+@media (max-width: 420px) {
+  .quick-review-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
 </style>
