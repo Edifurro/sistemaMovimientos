@@ -1,23 +1,29 @@
 import { ref } from 'vue'
-import { db } from '../services/firebase'
+import { auth, db } from '../services/firebase'
+import { formatOperationalDate, getOperationalContext } from '../services/operationalTime'
 import {
   collection,
   getDocs,
   getDoc,
+  getCountFromServer,
   doc,
+  onSnapshot,
   runTransaction,
   query,
+  serverTimestamp,
   where
 } from 'firebase/firestore'
 
 const PRESTAMOS_COLLECTION = 'prestamos'
 const PRODUCTS_COLLECTION = 'productos_nuevos'
-const ADEUDOS_COLLECTION = 'adeudosProductos'
 
 const prestamos = ref([])
+const prestamosSummary = ref({ abiertos: 0, pendientes: 0, cerrados: 0 })
 const trabajos = ref([])
 const loading = ref(false)
 const error = ref(null)
+let unsubscribePrestamos = null
+let summaryRefreshTimer = null
 
 const ESTADO_ABIERTO = 'abierto'
 const ESTADO_PENDIENTE_REVISION = 'pendiente_revision'
@@ -26,18 +32,14 @@ const ESTADO_CERRADO_CON_ADEUDO = 'cerrado_con_adeudo'
 const TIPO_PRESTAMO = 'PRESTAMO'
 const TIPO_ENTREGA_SIN_ADEUDO = 'ENTREGA_SIN_ADEUDO'
 
-const AREAS_TALLER = ['OFICINA', 'BODEGA']
+const AREAS_TALLER = ['OFICINA', 'BODEGA', 'SEGUNDO_PISO']
 const AREA_LABELS = {
   OFICINA: 'Oficina',
-  BODEGA: 'Bodega'
+  BODEGA: 'Bodega',
+  SEGUNDO_PISO: 'Segundo Piso'
 }
 
-const formatFechaOperativa = (date = new Date()) => {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
+const formatFechaOperativa = (date = new Date()) => formatOperationalDate(date)
 
 const formatFechaLabel = (fechaOperativa) => {
   if (!fechaOperativa) return ''
@@ -47,7 +49,7 @@ const formatFechaLabel = (fechaOperativa) => {
 }
 
 const getEndOfDayIso = (fechaOperativa) => {
-  const date = new Date(`${fechaOperativa || formatFechaOperativa()}T23:59:59.999`)
+  const date = new Date(`${fechaOperativa || formatFechaOperativa()}T23:59:59.999-05:00`)
   return Number.isNaN(date.getTime()) ? null : date.toISOString()
 }
 
@@ -71,19 +73,18 @@ const normalizeCategoriaControl = (value) => {
 
 const normalizeArea = (value) => {
   const raw = String(value || '').trim().toUpperCase().replace(/\s+/g, '_')
+  if (raw === 'SEGUNDO_PISO' || raw === 'SEGUNDOPISO') return 'SEGUNDO_PISO'
   if (raw === 'BODEGA') return 'BODEGA'
   return 'OFICINA'
 }
 
 const assertAreaPrestamos = (area) => {
   const raw = String(area || '').trim().toUpperCase().replace(/\s+/g, '_')
-  if (raw === 'SEGUNDO_PISO' || raw === 'SEGUNDOPISO') {
-    throw new Error('Este módulo solo permite préstamos desde Oficina o Bodega. El stock de Segundo Piso se manejará en otro módulo.')
+  if (!raw) return 'OFICINA'
+  if (!['OFICINA', 'BODEGA', 'SEGUNDO_PISO', 'SEGUNDOPISO'].includes(raw)) {
+    throw new Error('Área de préstamo inválida.')
   }
   const normalized = normalizeArea(raw)
-  if (!AREAS_TALLER.includes(normalized)) {
-    throw new Error('Este módulo solo permite préstamos desde Oficina o Bodega.')
-  }
   return normalized
 }
 
@@ -152,14 +153,19 @@ const calcularPendienteDetalle = (item) => {
   return Math.max(0, total - devuelto - consumido - devueltoComoEmpezado - adeudado)
 }
 
-const buildObservationEntry = (observacion = '', usuarioNombre = 'Usuario') => {
+const buildObservationEntry = (observacion = '', usuarioNombre = 'Usuario', nowIso = new Date().toISOString()) => {
   const clean = String(observacion || '').trim()
   if (!clean) return null
-  const fecha = new Date().toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })
+  const date = new Date(nowIso)
+  const fecha = date.toLocaleString('es-MX', {
+    timeZone: 'America/Cancun',
+    dateStyle: 'short',
+    timeStyle: 'short'
+  })
   return {
     observacion: clean,
     usuarioNombre: usuarioNombre || 'Usuario',
-    fecha: new Date().toISOString(),
+    fecha: nowIso,
     texto: `[${fecha} · ${usuarioNombre || 'Usuario'}]\n${clean}`
   }
 }
@@ -167,6 +173,18 @@ const buildObservationEntry = (observacion = '', usuarioNombre = 'Usuario') => {
 const appendObservation = (current = '', entry = null) => {
   if (!entry?.texto) return current || ''
   return current ? `${current}\n\n${entry.texto}` : entry.texto
+}
+
+const getAuthenticatedActor = async () => {
+  const user = auth.currentUser
+  if (!user?.uid) throw new Error('Tu sesión expiró. Inicia sesión nuevamente.')
+
+  const profileSnapshot = await getDoc(doc(db, 'usuarios', user.uid))
+  const profile = profileSnapshot.exists() ? profileSnapshot.data() : {}
+  return {
+    id: user.uid,
+    nombre: profile.nombre || profile.displayName || user.displayName || user.email || 'Usuario'
+  }
 }
 
 const normalizeDetalleEntrada = (item, productoData = {}) => {
@@ -198,7 +216,6 @@ const normalizeDetalleEntrada = (item, productoData = {}) => {
     cantidadConsumida: toNonNegativeInt(item.cantidadConsumida),
     cantidadDevueltaComoEmpezado: toNonNegativeInt(item.cantidadDevueltaComoEmpezado),
     cantidadAdeudada: toNonNegativeInt(item.cantidadAdeudada),
-    generaAdeudo: productoData.generaAdeudo !== false && item.generaAdeudo !== false,
     observacion: String(item.observacion || item.observacionEntrega || '').trim()
   }
 }
@@ -220,7 +237,6 @@ const normalizeExistingDetalle = (item = {}) => {
     cantidadConsumida: toNonNegativeInt(item.cantidadConsumida),
     cantidadDevueltaComoEmpezado: toNonNegativeInt(item.cantidadDevueltaComoEmpezado),
     cantidadAdeudada: toNonNegativeInt(item.cantidadAdeudada),
-    generaAdeudo: item.generaAdeudo !== false,
     observacion: String(item.observacion || '').trim()
   }
 }
@@ -233,7 +249,6 @@ const mergeDetalle = (existing, addition) => ({
   categoriaControl: addition.categoriaControl,
   areaOrigen: addition.areaOrigen || existing.areaOrigen || 'OFICINA',
   areaOrigenLabel: AREA_LABELS[addition.areaOrigen || existing.areaOrigen || 'OFICINA'],
-  generaAdeudo: addition.generaAdeudo !== false,
   cantidad: Number(existing.cantidad || 0) + Number(addition.cantidad || 0),
   cantidadDesdeStockNuevo: Number(existing.cantidadDesdeStockNuevo || 0) + Number(addition.cantidadDesdeStockNuevo || 0),
   cantidadDesdeStockEmpezado: Number(existing.cantidadDesdeStockEmpezado || 0) + Number(addition.cantidadDesdeStockEmpezado || 0),
@@ -244,20 +259,72 @@ const mergeDetalle = (existing, addition) => ({
   observacion: [existing.observacion, addition.observacion].filter(Boolean).join('\n')
 })
 
-const mapPrestamoDoc = (document) => ({ id: document.id, ...document.data() })
+const toIsoDate = (value) => {
+  if (value?.toDate) return value.toDate().toISOString()
+  return value
+}
+const mapPrestamoDoc = (document) => {
+  const data = document.data()
+  return {
+    id: document.id,
+    ...data,
+    createdAt: toIsoDate(data.createdAt),
+    updatedAt: toIsoDate(data.updatedAt),
+    cerradoAt: toIsoDate(data.cerradoAt),
+    marcadoRevisionAt: toIsoDate(data.marcadoRevisionAt),
+    revisionFinalizadaAt: toIsoDate(data.revisionFinalizadaAt)
+  }
+}
 const sortByUpdatedDesc = (items) => [...items].sort((a, b) => {
   const aDate = new Date(a.updatedAt || a.createdAt || 0).getTime()
   const bDate = new Date(b.updatedAt || b.createdAt || 0).getTime()
   return bDate - aDate
 })
 
+const buildPrestamosQuery = (filters = {}) => {
+  const constraints = []
+  const estados = Array.isArray(filters.estados)
+    ? filters.estados.filter(Boolean)
+    : filters.estado
+      ? [filters.estado]
+      : []
+
+  if (estados.length === 1) constraints.push(where('estado', '==', estados[0]))
+  if (estados.length > 1) constraints.push(where('estado', 'in', estados.slice(0, 10)))
+
+  if (filters.fechaOperativa) {
+    constraints.push(where('fechaOperativa', '==', filters.fechaOperativa))
+  } else {
+    if (filters.fechaInicio) constraints.push(where('fechaOperativa', '>=', filters.fechaInicio))
+    if (filters.fechaFin) constraints.push(where('fechaOperativa', '<=', filters.fechaFin))
+  }
+
+  return query(collection(db, PRESTAMOS_COLLECTION), ...constraints)
+}
+
+const applyLocalPrestamosFilters = (items, filters = {}) => {
+  let result = items
+  if (filters.colaboradorId) {
+    result = result.filter((prestamo) => prestamo.colaboradorId === filters.colaboradorId)
+  }
+  if (filters.areaOrigen) {
+    const area = normalizeArea(filters.areaOrigen)
+    result = result.filter((prestamo) => (
+      prestamo.detalles || []
+    ).some((detalle) => normalizeArea(detalle.areaOrigen) === area))
+  }
+  return sortByUpdatedDesc(result)
+}
+
 export function usePrestamos() {
   const createPrestamo = async (prestamoData = {}) => {
     loading.value = true
     error.value = null
     try {
+      const actor = await getAuthenticatedActor()
+      const operationalContext = await getOperationalContext()
       const { colaboradorId, detalles = [] } = prestamoData
-      const fechaOperativa = formatFechaOperativa()
+      const fechaOperativa = operationalContext.fechaOperativa
       const tipoOperacion = TIPO_PRESTAMO
 
       if (!colaboradorId) throw new Error('Debes seleccionar un colaborador')
@@ -265,8 +332,12 @@ export function usePrestamos() {
 
       const prestamoIdFinal = buildPrestamoId({ colaboradorId, fechaOperativa })
       const prestamoRef = doc(db, PRESTAMOS_COLLECTION, prestamoIdFinal)
-      const nowIso = new Date().toISOString()
-      const observationEntry = buildObservationEntry(prestamoData.observaciones || prestamoData.observacionGeneral, prestamoData.usuarioNombre || 'Usuario')
+      const nowIso = operationalContext.nowIso
+      const observationEntry = buildObservationEntry(
+        prestamoData.observaciones || prestamoData.observacionGeneral,
+        actor.nombre,
+        nowIso
+      )
 
       await runTransaction(db, async (transaction) => {
         const prestamoSnap = await transaction.get(prestamoRef)
@@ -324,8 +395,8 @@ export function usePrestamos() {
               cantidadDesdeStockNuevo: item.cantidadDesdeStockNuevo,
               cantidadDesdeStockEmpezado: item.cantidadDesdeStockEmpezado,
               observacion: item.observacion || '',
-              usuarioId: prestamoData.usuarioId || null,
-              usuarioNombre: prestamoData.usuarioNombre || 'Usuario',
+              usuarioId: actor.id,
+              usuarioNombre: actor.nombre,
               fecha: nowIso
             })
           }
@@ -379,7 +450,9 @@ export function usePrestamos() {
             cerradoAt: null,
             cerradoPorUsuarioId: null,
             cerradoPorUsuarioNombre: null,
-            createdAt: nowIso
+            createdBy: actor.id,
+            createdByName: actor.nombre,
+            createdAt: serverTimestamp()
           }
         }
 
@@ -397,7 +470,7 @@ export function usePrestamos() {
             stockPorArea,
             stock: totals.stock,
             stockEmpezado: normalizeCategoriaControl(productInfo.data.categoriaControl) === 'FRACCIONABLE' ? totals.stockEmpezado : 0,
-            updatedAt: nowIso
+            updatedAt: serverTimestamp()
           })
         }
 
@@ -421,7 +494,9 @@ export function usePrestamos() {
           movimientosPrestamo: [...(currentData.movimientosPrestamo || []), ...movements],
           observacionGeneral: appendObservation(currentData.observacionGeneral || '', observationEntry),
           observacionesGeneralesHistorial: observationHistory,
-          updatedAt: nowIso
+          updatedBy: actor.id,
+          updatedByName: actor.nombre,
+          updatedAt: serverTimestamp()
         }, { merge: true })
       })
 
@@ -444,25 +519,73 @@ export function usePrestamos() {
     return trabajos.value
   }
 
-  const getPrestamos = async (filters = {}, options = {}) => {
+  const getPrestamosSummary = async () => {
+    const collectionRef = collection(db, PRESTAMOS_COLLECTION)
+    const [abiertosSnapshot, pendientesSnapshot, cerradosSnapshot] = await Promise.all([
+      getCountFromServer(query(collectionRef, where('estado', 'in', [ESTADO_ABIERTO, 'activo']))),
+      getCountFromServer(query(collectionRef, where('estado', '==', ESTADO_PENDIENTE_REVISION))),
+      getCountFromServer(query(collectionRef, where('estado', 'in', [ESTADO_CERRADO, ESTADO_CERRADO_CON_ADEUDO])))
+    ])
+    prestamosSummary.value = {
+      abiertos: abiertosSnapshot.data().count,
+      pendientes: pendientesSnapshot.data().count,
+      cerrados: cerradosSnapshot.data().count
+    }
+    return prestamosSummary.value
+  }
+
+  const scheduleSummaryRefresh = () => {
+    if (summaryRefreshTimer) clearTimeout(summaryRefreshTimer)
+    summaryRefreshTimer = setTimeout(() => {
+      getPrestamosSummary().catch((err) => {
+        console.warn('No se pudo actualizar el resumen de préstamos.', err)
+      })
+    }, 250)
+  }
+
+  const stopPrestamosListener = () => {
+    if (unsubscribePrestamos) unsubscribePrestamos()
+    unsubscribePrestamos = null
+    if (summaryRefreshTimer) clearTimeout(summaryRefreshTimer)
+    summaryRefreshTimer = null
+  }
+
+  const subscribePrestamos = async (filters = {}) => {
+    stopPrestamosListener()
+    loading.value = true
+    error.value = null
+
+    return new Promise((resolve, reject) => {
+      let settled = false
+      unsubscribePrestamos = onSnapshot(
+        buildPrestamosQuery(filters),
+        (snapshot) => {
+          prestamos.value = applyLocalPrestamosFilters(snapshot.docs.map(mapPrestamoDoc), filters)
+          loading.value = false
+          scheduleSummaryRefresh()
+          if (!settled) {
+            settled = true
+            resolve(prestamos.value)
+          }
+        },
+        (err) => {
+          error.value = err?.message || 'No se pudieron sincronizar los préstamos.'
+          loading.value = false
+          if (!settled) {
+            settled = true
+            reject(err)
+          }
+        }
+      )
+    })
+  }
+
+  const getPrestamos = async (filters = {}) => {
     loading.value = true
     error.value = null
     try {
-      if (options.procesarVencidos !== false) await procesarPrestamosVencidos()
-      const snapshot = await getDocs(collection(db, PRESTAMOS_COLLECTION))
-      let result = snapshot.docs.map(mapPrestamoDoc)
-
-      if (filters.fechaOperativa) result = result.filter((p) => p.fechaOperativa === filters.fechaOperativa)
-      if (filters.fechaInicio) result = result.filter((p) => String(p.fechaOperativa || '') >= String(filters.fechaInicio))
-      if (filters.fechaFin) result = result.filter((p) => String(p.fechaOperativa || '') <= String(filters.fechaFin))
-      if (filters.colaboradorId) result = result.filter((p) => p.colaboradorId === filters.colaboradorId)
-      if (filters.estado) result = result.filter((p) => p.estado === filters.estado)
-      if (filters.areaOrigen) {
-        const area = normalizeArea(filters.areaOrigen)
-        result = result.filter((p) => (p.detalles || []).some((d) => normalizeArea(d.areaOrigen) === area))
-      }
-
-      prestamos.value = sortByUpdatedDesc(result)
+      const snapshot = await getDocs(buildPrestamosQuery(filters))
+      prestamos.value = applyLocalPrestamosFilters(snapshot.docs.map(mapPrestamoDoc), filters)
       return prestamos.value
     } catch (err) {
       error.value = err.message
@@ -473,7 +596,7 @@ export function usePrestamos() {
   }
 
   const getPrestamosHoy = async (fechaOperativa = formatFechaOperativa()) => {
-    return getPrestamos({ fechaOperativa, estado: ESTADO_ABIERTO })
+    return getPrestamos({ fechaOperativa, estados: [ESTADO_ABIERTO, 'activo'] })
   }
 
   const getPrestamosRevision = async (filters = {}) => {
@@ -481,73 +604,21 @@ export function usePrestamos() {
   }
 
   const getPrestamosCerrados = async (filters = {}) => {
-    const result = await getPrestamos(filters)
-    prestamos.value = sortByUpdatedDesc(result.filter((p) => [ESTADO_CERRADO, ESTADO_CERRADO_CON_ADEUDO].includes(p.estado)))
-    return prestamos.value
+    return getPrestamos({ ...filters, estados: [ESTADO_CERRADO, ESTADO_CERRADO_CON_ADEUDO] })
   }
 
   const getPrestamosConAdeudo = async (filters = {}) => {
-    const result = await getPrestamos(filters)
-    prestamos.value = sortByUpdatedDesc(result.filter((p) => p.estado === ESTADO_CERRADO_CON_ADEUDO))
-    return prestamos.value
-  }
-
-  const writeAdeudos = async (transaction, prestamoActual, adeudosAgrupados, nowIso) => {
-    const adeudosSnapshots = []
-    for (const adeudo of adeudosAgrupados) {
-      const adeudoId = `${prestamoActual.id}_${adeudo.item.productoId}_${adeudo.item.areaOrigen}`
-      const adeudoRef = doc(db, ADEUDOS_COLLECTION, adeudoId)
-      const adeudoSnap = await transaction.get(adeudoRef)
-      adeudosSnapshots.push({ adeudo, adeudoRef, adeudoSnap })
-    }
-
-    for (const { adeudo, adeudoRef, adeudoSnap } of adeudosSnapshots) {
-      const adeudoPayload = {
-        colaboradorId: prestamoActual.colaboradorId,
-        colaboradorNombre: prestamoActual.colaboradorNombre || '',
-        productoId: adeudo.item.productoId,
-        productoNombre: adeudo.item.productoNombre || adeudo.item.nombre || '',
-        areaOrigen: adeudo.item.areaOrigen,
-        areaOrigenLabel: AREA_LABELS[adeudo.item.areaOrigen],
-        prestamoId: prestamoActual.id,
-        fechaOperativa: prestamoActual.fechaOperativa,
-        tipoOperacion: TIPO_PRESTAMO,
-        origen: 'prestamo_diario'
-      }
-
-      if (adeudoSnap.exists()) {
-        const current = adeudoSnap.data()
-        const cantidadAdeudadaTotal = Number(current.cantidadAdeudada || 0) + adeudo.cantidadAdeudada
-        const cantidadPendienteTotal = Number(current.cantidadPendiente || 0) + adeudo.cantidadAdeudada
-        transaction.update(adeudoRef, {
-          ...adeudoPayload,
-          cantidadAdeudada: cantidadAdeudadaTotal,
-          cantidadPendiente: cantidadPendienteTotal,
-          observaciones: [current.observaciones, adeudo.observaciones].filter(Boolean).join('\n'),
-          estado: 'pendiente',
-          updatedAt: nowIso
-        })
-      } else {
-        transaction.set(adeudoRef, {
-          ...adeudoPayload,
-          cantidadAdeudada: adeudo.cantidadAdeudada,
-          cantidadSaldada: 0,
-          cantidadPendiente: adeudo.cantidadAdeudada,
-          observaciones: adeudo.observaciones,
-          estado: 'pendiente',
-          createdAt: nowIso,
-          updatedAt: nowIso
-        })
-      }
-    }
+    return getPrestamos({ ...filters, estado: ESTADO_CERRADO_CON_ADEUDO })
   }
 
   const liberarPrestamoDiario = async (prestamoId, payload = {}) => {
     loading.value = true
     error.value = null
     try {
+      const actor = await getAuthenticatedActor()
+      const operationalContext = await getOperationalContext()
       const prestamoRef = doc(db, PRESTAMOS_COLLECTION, prestamoId)
-      const nowIso = new Date().toISOString()
+      const nowIso = operationalContext.nowIso
 
       await runTransaction(db, async (transaction) => {
         const prestamoSnap = await transaction.get(prestamoRef)
@@ -558,42 +629,56 @@ export function usePrestamos() {
           throw new Error('Este préstamo ya está cerrado')
         }
 
-        const liberaciones = Array.isArray(payload.detallesLiberacion) ? payload.detallesLiberacion : []
+        const liberaciones = Array.isArray(payload.detallesLiberacion)
+          ? payload.detallesLiberacion
+          : []
         const cierreDefinitivo = payload.cierreDefinitivo === true
-        const cierreAutomatico = payload.cierreAutomatico === true
+
+        if (cierreDefinitivo && prestamoActual.estado !== ESTADO_PENDIENTE_REVISION) {
+          throw new Error('Un préstamo abierto solo puede pasar a revisión mediante el proceso automático al finalizar el día.')
+        }
 
         const productosStockDelta = {}
-        const adeudosToWrite = []
         const historialDetalles = []
         let huboAccion = false
-        let huboAdeudoAutomaticoPorCierre = false
 
-        let detallesActualizados = (prestamoActual.detalles || []).map((rawItem) => {
+        const detallesActualizados = (prestamoActual.detalles || []).map((rawItem) => {
           const item = normalizeExistingDetalle(rawItem)
-          const lib = liberaciones.find((d) => d.productoId === item.productoId && (!d.areaOrigen || normalizeArea(d.areaOrigen) === item.areaOrigen)) || {}
+          const lib = liberaciones.find((detail) => (
+            detail.productoId === item.productoId &&
+            (!detail.areaOrigen || normalizeArea(detail.areaOrigen) === item.areaOrigen)
+          )) || {}
 
           const cantidadDevuelta = toNonNegativeInt(lib.cantidadDevuelta)
           const cantidadConsumida = toNonNegativeInt(lib.cantidadConsumida)
           const cantidadDevueltaComoEmpezado = toNonNegativeInt(lib.cantidadDevueltaComoEmpezado)
           const cantidadAdeudada = toNonNegativeInt(lib.cantidadAdeudada)
-          const suma = cantidadDevuelta + cantidadConsumida + cantidadDevueltaComoEmpezado + cantidadAdeudada
 
+          if (cantidadAdeudada > 0) {
+            throw new Error('Los adeudos no pueden registrarse manualmente; se generan al vencer los 3 días de revisión.')
+          }
+
+          const suma = cantidadDevuelta + cantidadConsumida + cantidadDevueltaComoEmpezado
           if (suma <= 0) return item
 
           const pendiente = calcularPendienteDetalle(item)
-          if (suma > pendiente) throw new Error(`No puedes liberar más de lo pendiente para ${item.nombre || item.productoNombre}`)
+          if (suma > pendiente) {
+            throw new Error(`No puedes liberar más de lo pendiente para ${item.nombre || item.productoNombre}`)
+          }
           if (cantidadDevueltaComoEmpezado > 0 && item.categoriaControl !== 'FRACCIONABLE') {
             throw new Error(`Solo los productos fraccionables pueden reingresar como empezados: ${item.nombre || item.productoNombre}`)
           }
 
           const comentarioConsumo = String(lib.comentarioConsumo || '').trim()
           const comentarioDevueltoComoEmpezado = String(lib.comentarioDevueltoComoEmpezado || '').trim()
-          const comentarioAdeudo = String(lib.comentarioAdeudo || '').trim()
           const comentarioDevuelto = String(lib.comentarioDevuelto || '').trim()
 
-          if (cantidadConsumida > 0 && !comentarioConsumo) throw new Error(`Debes agregar comentario de consumo para ${item.nombre || item.productoNombre}`)
-          if (cantidadDevueltaComoEmpezado > 0 && !comentarioDevueltoComoEmpezado) throw new Error(`Debes agregar comentario de reingreso como empezado para ${item.nombre || item.productoNombre}`)
-          if (cantidadAdeudada > 0 && !comentarioAdeudo) throw new Error(`Debes agregar comentario de adeudo para ${item.nombre || item.productoNombre}`)
+          if (cantidadConsumida > 0 && !comentarioConsumo) {
+            throw new Error(`Debes agregar comentario de consumo para ${item.nombre || item.productoNombre}`)
+          }
+          if (cantidadDevueltaComoEmpezado > 0 && !comentarioDevueltoComoEmpezado) {
+            throw new Error(`Debes agregar comentario de reingreso como empezado para ${item.nombre || item.productoNombre}`)
+          }
 
           huboAccion = true
 
@@ -601,17 +686,12 @@ export function usePrestamos() {
             const key = `${item.productoId}__${item.areaOrigen}`
             productosStockDelta[key] = productosStockDelta[key] || {
               ref: doc(db, PRODUCTS_COLLECTION, item.productoId),
-              productoId: item.productoId,
               areaOrigen: item.areaOrigen,
               stock: 0,
               stockEmpezado: 0
             }
             productosStockDelta[key].stock += cantidadDevuelta
             productosStockDelta[key].stockEmpezado += cantidadDevueltaComoEmpezado
-          }
-
-          if (cantidadAdeudada > 0) {
-            adeudosToWrite.push({ item, cantidadAdeudada, observaciones: comentarioAdeudo })
           }
 
           historialDetalles.push({
@@ -624,59 +704,24 @@ export function usePrestamos() {
             cantidadConsumida,
             comentarioConsumo,
             cantidadDevueltaComoEmpezado,
-            comentarioDevueltoComoEmpezado,
-            cantidadAdeudada,
-            comentarioAdeudo
+            comentarioDevueltoComoEmpezado
           })
 
           return {
             ...item,
             cantidadDevuelta: Number(item.cantidadDevuelta || 0) + cantidadDevuelta,
             cantidadConsumida: Number(item.cantidadConsumida || 0) + cantidadConsumida,
-            cantidadDevueltaComoEmpezado: Number(item.cantidadDevueltaComoEmpezado || 0) + cantidadDevueltaComoEmpezado,
-            cantidadAdeudada: Number(item.cantidadAdeudada || 0) + cantidadAdeudada
+            cantidadDevueltaComoEmpezado: Number(item.cantidadDevueltaComoEmpezado || 0) + cantidadDevueltaComoEmpezado
           }
         })
 
-        let pendientes = detallesActualizados.filter((item) => calcularPendienteDetalle(item) > 0)
-
+        const pendientes = detallesActualizados.filter((item) => calcularPendienteDetalle(item) > 0)
         if (cierreDefinitivo && pendientes.length) {
-          detallesActualizados = detallesActualizados.map((item) => {
-            const pendiente = calcularPendienteDetalle(item)
-            if (pendiente <= 0) return item
-
-            const comentarioAdeudoAutomatico = cierreAutomatico
-              ? `Adeudo generado automáticamente por caducidad del préstamo diario (${AREA_LABELS[item.areaOrigen] || item.areaOrigen}).`
-              : `Pendiente registrado como adeudo al finalizar la revisión (${AREA_LABELS[item.areaOrigen] || item.areaOrigen}).`
-
-            adeudosToWrite.push({ item, cantidadAdeudada: pendiente, observaciones: comentarioAdeudoAutomatico })
-            historialDetalles.push({
-              productoId: item.productoId,
-              productoNombre: item.productoNombre || item.nombre,
-              areaOrigen: item.areaOrigen,
-              areaOrigenLabel: AREA_LABELS[item.areaOrigen],
-              cantidadDevuelta: 0,
-              comentarioDevuelto: '',
-              cantidadConsumida: 0,
-              comentarioConsumo: '',
-              cantidadDevueltaComoEmpezado: 0,
-              comentarioDevueltoComoEmpezado: '',
-              cantidadAdeudada: pendiente,
-              comentarioAdeudo: comentarioAdeudoAutomatico,
-              generadoAutomaticamente: true,
-              cierreAutomatico
-            })
-
-            huboAccion = true
-            huboAdeudoAutomaticoPorCierre = true
-
-            return { ...item, cantidadAdeudada: Number(item.cantidadAdeudada || 0) + pendiente }
-          })
-
-          pendientes = detallesActualizados.filter((item) => calcularPendienteDetalle(item) > 0)
+          throw new Error('Debes comprobar todos los artículos antes de finalizar la revisión.')
         }
-
-        if (!huboAccion && !cierreDefinitivo) throw new Error('No hay cantidades válidas para liberar')
+        if (!huboAccion && !cierreDefinitivo) {
+          throw new Error('No hay cantidades válidas para liberar')
+        }
 
         const productosSnapshots = {}
         for (const [key, delta] of Object.entries(productosStockDelta)) {
@@ -685,67 +730,66 @@ export function usePrestamos() {
           productosSnapshots[key] = { snap: productoSnap, delta }
         }
 
-        const adeudosAgrupados = Object.values(adeudosToWrite.reduce((acc, adeudo) => {
-          const key = `${adeudo.item.productoId}_${adeudo.item.areaOrigen}`
-          if (!acc[key]) acc[key] = { ...adeudo, cantidadAdeudada: 0, observaciones: '' }
-          acc[key].cantidadAdeudada += Number(adeudo.cantidadAdeudada || 0)
-          acc[key].observaciones = [acc[key].observaciones, adeudo.observaciones].filter(Boolean).join('\n')
-          return acc
-        }, {}))
-
-        await writeAdeudos(transaction, prestamoActual, adeudosAgrupados, nowIso)
-
         for (const { snap: productoSnap, delta } of Object.values(productosSnapshots)) {
           const productoData = productoSnap.data()
           const stockPorArea = normalizeStockPorArea(productoData)
-          stockPorArea[delta.areaOrigen] = stockPorArea[delta.areaOrigen] || { stock: 0, stockEmpezado: 0 }
+          stockPorArea[delta.areaOrigen] = stockPorArea[delta.areaOrigen] || {
+            stock: 0,
+            stockEmpezado: 0
+          }
           stockPorArea[delta.areaOrigen].stock += delta.stock
           stockPorArea[delta.areaOrigen].stockEmpezado += delta.stockEmpezado
           const totals = getTotalsFromStockPorArea(stockPorArea)
           transaction.update(delta.ref, {
             stockPorArea,
             stock: totals.stock,
-            stockEmpezado: normalizeCategoriaControl(productoData.categoriaControl) === 'FRACCIONABLE' ? totals.stockEmpezado : 0,
-            updatedAt: nowIso
+            stockEmpezado: normalizeCategoriaControl(productoData.categoriaControl) === 'FRACCIONABLE'
+              ? totals.stockEmpezado
+              : 0,
+            updatedAt: serverTimestamp()
           })
         }
 
-        const totalAdeudado = detallesActualizados.reduce((sum, item) => sum + Number(item.cantidadAdeudada || 0), 0)
-        let nextEstado = ESTADO_ABIERTO
+        const totalAdeudado = detallesActualizados.reduce(
+          (sum, item) => sum + Number(item.cantidadAdeudada || 0),
+          0
+        )
         const updatePayload = {
           detalles: detallesActualizados,
-          historialLiberaciones: huboAccion ? [
-            ...(prestamoActual.historialLiberaciones || []),
-            {
-              fecha: nowIso,
-              usuarioId: payload.usuarioId || null,
-              usuarioNombre: payload.usuarioNombre || (cierreAutomatico ? 'Sistema' : 'Usuario'),
-              cierreDefinitivo,
-              cierreAutomatico,
-              detalles: historialDetalles
-            }
-          ] : (prestamoActual.historialLiberaciones || []),
-          updatedAt: nowIso
+          historialLiberaciones: huboAccion
+            ? [
+                ...(prestamoActual.historialLiberaciones || []),
+                {
+                  fecha: nowIso,
+                  usuarioId: actor.id,
+                  usuarioNombre: actor.nombre,
+                  cierreDefinitivo,
+                  cierreAutomatico: false,
+                  detalles: historialDetalles
+                }
+              ]
+            : (prestamoActual.historialLiberaciones || []),
+          estado: prestamoActual.estado === ESTADO_PENDIENTE_REVISION
+            ? ESTADO_PENDIENTE_REVISION
+            : ESTADO_ABIERTO,
+          updatedAt: serverTimestamp(),
+          updatedBy: actor.id,
+          updatedByName: actor.nombre
         }
 
         if (cierreDefinitivo) {
-          if (pendientes.length) throw new Error('No se pudo cerrar el préstamo: quedan cantidades pendientes que no pudieron convertirse en adeudo.')
-          nextEstado = totalAdeudado > 0 ? ESTADO_CERRADO_CON_ADEUDO : ESTADO_CERRADO
-          updatePayload.estado = nextEstado
-          updatePayload.observacionCierre = String(payload.observacionCierre || '').trim() || (huboAdeudoAutomaticoPorCierre ? 'Revisión finalizada: los pendientes se registraron como adeudo.' : '')
+          updatePayload.estado = totalAdeudado > 0
+            ? ESTADO_CERRADO_CON_ADEUDO
+            : ESTADO_CERRADO
+          updatePayload.observacionCierre = String(payload.observacionCierre || '').trim()
           updatePayload.cerradoPermanentemente = true
-          updatePayload.cerradoAt = nowIso
-          updatePayload.cerradoPorUsuarioId = payload.usuarioId || null
-          updatePayload.cerradoPorUsuarioNombre = payload.usuarioNombre || (cierreAutomatico ? 'Sistema' : 'Usuario')
+          updatePayload.cerradoAt = serverTimestamp()
+          updatePayload.cerradoPorUsuarioId = actor.id
+          updatePayload.cerradoPorUsuarioNombre = actor.nombre
           updatePayload.requiereRevision = false
-          updatePayload.revisionFinalizadaAt = nowIso
-          updatePayload.revisionFinalizadaPorUsuarioId = payload.usuarioId || null
-          updatePayload.revisionFinalizadaPorUsuarioNombre = payload.usuarioNombre || (cierreAutomatico ? 'Sistema' : 'Usuario')
-          updatePayload.vencido = cierreAutomatico || prestamoActual.estado === ESTADO_PENDIENTE_REVISION
-        } else {
-          updatePayload.estado = prestamoActual.estado === ESTADO_PENDIENTE_REVISION
-            ? ESTADO_PENDIENTE_REVISION
-            : ESTADO_ABIERTO
+          updatePayload.revisionFinalizadaAt = serverTimestamp()
+          updatePayload.revisionFinalizadaPorUsuarioId = actor.id
+          updatePayload.revisionFinalizadaPorUsuarioNombre = actor.nombre
         }
 
         transaction.update(prestamoRef, updatePayload)
@@ -760,42 +804,6 @@ export function usePrestamos() {
     }
   }
 
-  const procesarPrestamosVencidos = async (fechaCorte = formatFechaOperativa()) => {
-    const snapshot = await getDocs(query(collection(db, PRESTAMOS_COLLECTION), where('estado', 'in', [ESTADO_ABIERTO, 'activo'])))
-    const vencidos = snapshot.docs
-      .map(mapPrestamoDoc)
-      .filter((prestamo) => prestamo.fechaOperativa && prestamo.fechaOperativa < fechaCorte)
-
-    for (const prestamo of vencidos) {
-      try {
-        const prestamoRef = doc(db, PRESTAMOS_COLLECTION, prestamo.id)
-        await runTransaction(db, async (transaction) => {
-          const currentSnap = await transaction.get(prestamoRef)
-          if (!currentSnap.exists()) return
-
-          const current = currentSnap.data()
-          if (![ESTADO_ABIERTO, 'activo'].includes(current.estado)) return
-          if (!current.fechaOperativa || current.fechaOperativa >= fechaCorte) return
-
-          const nowIso = new Date().toISOString()
-          transaction.update(prestamoRef, {
-            estado: ESTADO_PENDIENTE_REVISION,
-            requiereRevision: true,
-            pendienteRevisionDesde: fechaCorte,
-            marcadoRevisionAt: nowIso,
-            marcadoRevisionPor: 'Sistema',
-            vencido: true,
-            updatedAt: nowIso
-          })
-        })
-      } catch (err) {
-        console.error('No se pudo marcar préstamo para revisión', prestamo.id, err)
-      }
-    }
-
-    return vencidos.length
-  }
-
   const devolverPrestamo = async (id, detallesDevolucion) => {
     const detallesLiberacion = (detallesDevolucion || []).map((item) => ({
       productoId: item.productoId,
@@ -805,35 +813,38 @@ export function usePrestamos() {
       cantidadConsumida: toNonNegativeInt(item.cantidadConsumida),
       comentarioConsumo: item.observacion || item.comentarioConsumo || '',
       cantidadDevueltaComoEmpezado: toNonNegativeInt(item.cantidadDevueltaComoEmpezado),
-      comentarioDevueltoComoEmpezado: item.observacion || item.comentarioDevueltoComoEmpezado || '',
-      cantidadAdeudada: toNonNegativeInt(item.cantidadAdeudada),
-      comentarioAdeudo: item.observacion || item.comentarioAdeudo || ''
+      comentarioDevueltoComoEmpezado: item.observacion || item.comentarioDevueltoComoEmpezado || ''
     }))
 
     return liberarPrestamoDiario(id, {
       detallesLiberacion,
       cierreDefinitivo: false,
-      observacionCierre: '',
-      usuarioId: null,
-      usuarioNombre: 'Usuario'
+      observacionCierre: ''
     })
   }
 
   const getPendientes = async () => getPrestamosRevision()
 
   const getVencidos = async (fechaCorte = formatFechaOperativa()) => {
-    await procesarPrestamosVencidos(fechaCorte)
-    const snapshot = await getDocs(query(collection(db, PRESTAMOS_COLLECTION), where('estado', '==', ESTADO_PENDIENTE_REVISION)))
-    return snapshot.docs.map(mapPrestamoDoc).filter((prestamo) => prestamo.fechaOperativa && prestamo.fechaOperativa < fechaCorte)
+    const snapshot = await getDocs(query(
+      collection(db, PRESTAMOS_COLLECTION),
+      where('estado', '==', ESTADO_PENDIENTE_REVISION),
+      where('revisionVenceEn', '<=', fechaCorte)
+    ))
+    return snapshot.docs.map(mapPrestamoDoc)
   }
 
   return {
     prestamos,
+    prestamosSummary,
     trabajos,
     loading,
     error,
     createPrestamo,
     getPrestamos,
+    getPrestamosSummary,
+    subscribePrestamos,
+    stopPrestamosListener,
     getTrabajos,
     getPrestamoById,
     getPrestamosHoy,
@@ -842,7 +853,6 @@ export function usePrestamos() {
     getPrestamosConAdeudo,
     liberarPrestamoDiario,
     devolverPrestamo,
-    procesarPrestamosVencidos,
     getPendientes,
     getVencidos,
     formatFechaOperativa,

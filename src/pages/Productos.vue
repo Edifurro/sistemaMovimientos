@@ -166,7 +166,6 @@
                   <span class="ui-chip ui-chip--muted">{{ getSelectedAreaLabel() }}</span>
                   <span class="ui-chip ui-chip--muted">Mínimo: {{ getStockMinimo(product) }}</span>
                   <span class="ui-chip" :class="getStockStatusClass(product)">{{ getStockStatusLabel(product) }}</span>
-                  <span v-if="product.generaAdeudo === false" class="ui-chip ui-chip--warning">No genera adeudo</span>
                 </div>
 
                 <div class="stock-grid product-stock-grid" :class="{ 'stock-grid--fraccionable': product.categoriaControl === 'FRACCIONABLE' }">
@@ -335,10 +334,6 @@
               {{ categoriaControlError }}
             </p>
 
-            <ion-item>
-              <ion-label>Puede generar adeudo</ion-label>
-              <ion-toggle v-model="formData.generaAdeudo"></ion-toggle>
-            </ion-item>
           </div>
 
           <div class="form-card compact-card form-section">
@@ -612,6 +607,7 @@ import JsBarcode from 'jsbarcode'
 import { useProducts } from '../composables/useProducts'
 import { useMovimientos } from '../composables/useMovimientos'
 import { usePrestamos } from '../composables/usePrestamos'
+import { auth } from '../services/firebase'
 import {
   IonPage,
   IonHeader,
@@ -640,13 +636,21 @@ import {
   IonSearchbar,
   IonSelect,
   IonSelectOption,
-  IonToggle,
   onIonViewWillLeave
 } from '@ionic/vue'
 import { add, remove, checkmarkCircle, apps, home, cube, people, swapHorizontal, print, camera, refresh, clipboardOutline, closeOutline } from 'ionicons/icons'
 
 const router = useRouter()
-const { products, loading, error, createProduct, getProducts, migrateLegacyProductsToStockPorArea, updateProduct, deleteProduct: deleteProductAPI } = useProducts()
+const {
+  products,
+  loading,
+  error,
+  createProduct,
+  getProducts,
+  adjustProductStock,
+  updateProduct,
+  deleteProduct: deleteProductAPI
+} = useProducts()
 const { logMovimiento } = useMovimientos()
 const { getPrestamos } = usePrestamos()
 
@@ -722,7 +726,6 @@ const formData = ref({
   nombre: '',
   descripcion: '',
   categoriaControl: '',
-  generaAdeudo: true,
   stockMinimo: 0,
   stock: 0,
   stockEmpezado: 0,
@@ -781,7 +784,6 @@ const resetForm = () => {
     nombre: '',
     descripcion: '',
     categoriaControl: '',
-    generaAdeudo: true,
     stockMinimo: 0,
     stock: 0,
     stockEmpezado: 0,
@@ -1158,11 +1160,6 @@ const openBarcodeScanner = async () => {
 }
 
 const refreshProductsAndLoanedStock = async () => {
-  try {
-    await migrateLegacyProductsToStockPorArea()
-  } catch (migrationErr) {
-    console.warn('No se pudo ejecutar la migracion automatica de stock por area:', migrationErr)
-  }
   const [allProducts, allPrestamos] = await Promise.all([getProducts(), getPrestamos()])
   calculateLoanedStock(allPrestamos)
   return allProducts
@@ -1194,7 +1191,6 @@ const openEditProductModal = (product) => {
     nombre: product.nombre,
     descripcion: product.descripcion || '',
     categoriaControl: product.categoriaControl || 'UNIDAD',
-    generaAdeudo: product.generaAdeudo !== false,
     stockMinimo: normalizeIntegerValue(product.stockMinimo, 0),
     stock: Number.isFinite(Number(product.stock)) ? Number(product.stock) : 0,
     stockEmpezado: Number.isFinite(Number(product.stockEmpezado)) ? Number(product.stockEmpezado) : 0,
@@ -1730,27 +1726,18 @@ const applyQuickStockAdjustment = async () => {
   const isFraccionable = quickProduct.value.categoriaControl === 'FRACCIONABLE'
   const target = isFraccionable ? quickStockTarget.value : 'stock'
   const area = normalizeAreaKey(quickArea.value)
-  const stockPorArea = normalizeStockPorAreaLocal(quickProduct.value)
-  const current = Number(stockPorArea[area]?.[target] || 0)
-  let next = current
-  if (quickAdjust.value === 'add') {
-    next = current + cantidad
-  } else {
-    next = current - cantidad
-    if (next < 0) {
-      quickScannerError.value = 'Operacion invalida: el stock no puede quedar negativo.'
-      return
-    }
-  }
-  stockPorArea[area][target] = next
+  const delta = quickAdjust.value === 'add' ? cantidad : -cantidad
 
   try {
-    await updateProduct(quickProduct.value.id, { stockPorArea, categoriaControlActual: quickProduct.value.categoriaControl }, { partial: true })
+    const adjustedProduct = await adjustProductStock(quickProduct.value.id, {
+      area,
+      stockDelta: target === 'stock' ? delta : 0,
+      stockEmpezadoDelta: target === 'stockEmpezado' ? delta : 0
+    })
+    const next = Number(adjustedProduct.stockPorArea?.[area]?.[target] || 0)
     try {
-      const userJSON = localStorage.getItem('user')
-      const usuario = userJSON ? JSON.parse(userJSON) : null
-      const usuarioId = usuario?.uid || usuario?.id || null
-      const usuarioNombre = usuario?.nombre || usuario?.email || 'Usuario'
+      const usuario = auth.currentUser
+      if (!usuario?.uid) throw new Error('Tu sesión expiró. Inicia sesión nuevamente.')
       await logMovimiento({
         productoId: quickProduct.value.id,
         productoNombre: quickProduct.value.nombre,
@@ -1758,13 +1745,12 @@ const applyQuickStockAdjustment = async () => {
         tipo: quickAdjust.value === 'add' ? 'entrada' : 'salida',
         motivo: target === 'stockEmpezado' ? 'Ajuste rapido de stock empezado' : 'Ajuste rapido de stock nuevo',
         areaOrigen: area,
-        usuarioId,
-        usuarioNombre
+        usuarioId: usuario.uid,
+        usuarioNombre: usuario.displayName || usuario.email || 'Usuario'
       })
     } catch (mErr) {
       console.warn('No se pudo registrar movimiento:', mErr)
     }
-    await refreshProductsAndLoanedStock()
     quickModalOpen.value = false
     quickProduct.value = null
     await showSaveToastFn(`${target === 'stockEmpezado' ? 'Stock empezado' : 'Stock'} actualizado: ${next}`)
@@ -1790,7 +1776,6 @@ const normalizeProductPayload = () => {
   const stockEmpezado = categoriaControl === 'FRACCIONABLE'
     ? AREAS_TALLER.reduce((sum, area) => sum + Number(stockPorArea[area]?.stockEmpezado || 0), 0)
     : 0
-  const generaAdeudo = formData.value.generaAdeudo !== false
   const precioRaw = formData.value.precio
   const precio = precioRaw === '' || precioRaw === null || precioRaw === undefined
     ? null
@@ -1802,7 +1787,6 @@ const normalizeProductPayload = () => {
     tipo,
     categoriaControl,
     unidadStock: categoriaControl === 'FRACCIONABLE' ? 'ENVASE' : categoriaControl === 'HERRAMIENTA' ? 'UNIDAD' : 'PIEZA',
-    generaAdeudo,
     stockMinimo: normalizeIntegerValue(formData.value.stockMinimo, 0),
     stockPorArea,
     stock: Number.isFinite(stock) ? stock : 0,

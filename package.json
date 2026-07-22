@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "cleanup:user-password-fields": "node scripts/cleanup-user-password-fields.mjs"
+    "cleanup:user-password-fields": "node scripts/cleanup-user-password-fields.mjs",
+    "cleanup:genera-adeudo": "node scripts/cleanup-genera-adeudo.mjs"
   },
   "keywords": [
     "inventario",
@@ -38,7 +39,6 @@
   "devDependencies": {
     "@capacitor/cli": "^6.2.1",
     "@vitejs/plugin-vue": "^5.0.0",
-    "vite": "^5.0.0",
-    "vite-plugin-vue-inspector": "^5.4.0"
+    "vite": "^5.0.0"
   }
 }

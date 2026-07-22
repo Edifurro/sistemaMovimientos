@@ -33,6 +33,11 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    match /productos_nuevos/{productId} {
+      allow read: if isAuth();
+      allow create, update, delete: if isAdmin();
+    }
+
     // Colaboradores: lectura por autenticados, cambios por admin
     match /colaboradores/{colaboradorId} {
       allow read: if isAuth();
@@ -73,8 +78,31 @@ service cloud.firestore {
     // Prestamos: lectura general, creación por autenticados, edición sólo admin
     match /prestamos/{prestamoId} {
       allow read: if isAuth();
-      allow create: if isAuth();
-      allow update, delete: if isAdmin();
+      allow create: if isAuth()
+        && request.resource.data.estado == 'abierto'
+        && request.resource.data.updatedBy == request.auth.uid;
+      allow update: if isAdmin()
+        && request.resource.data.updatedBy == request.auth.uid
+        && (
+          (resource.data.estado in ['abierto', 'activo']
+            && request.resource.data.estado == 'abierto')
+          ||
+          (resource.data.estado == 'pendiente_revision'
+            && request.resource.data.estado in [
+              'pendiente_revision',
+              'cerrado',
+              'cerrado_con_adeudo'
+            ])
+        );
+      allow delete: if isAdmin();
+    }
+
+    match /adeudosProductos/{adeudoId} {
+      allow read: if isAuth();
+      allow create: if isAdmin();
+      allow update: if isAdmin()
+        && request.resource.data.updatedBy == request.auth.uid;
+      allow delete: if isAdmin();
     }
 
     // Reportes: lectura por autenticados, escritura deshabilitada

@@ -1,0 +1,30 @@
+ACTUALIZACION DEL MODULO DE PRESTAMOS - RAMA angel
+
+1. Sustituye en tu proyecto los archivos incluidos respetando la misma estructura de carpetas.
+
+2. Instala las dependencias del proyecto si aun no lo has hecho:
+   npm install
+   npm --prefix functions install
+
+3. Verifica la compilacion:
+   npm run build
+   npm --prefix functions run lint
+
+4. Despliega reglas, indices y Cloud Functions:
+   firebase deploy --only firestore:rules,firestore:indexes,functions
+
+Importante:
+- Las funciones programadas y la funcion callable obtenerContextoOperativo requieren que el proyecto de Firebase permita desplegar Cloud Functions.
+- Los indices de Firestore pueden tardar algunos minutos en quedar listos despues del despliegue.
+- La aplicacion conserva una alternativa local con zona America/Cancun si la funcion de contexto operativo aun no esta desplegada, pero el funcionamiento recomendado usa la hora del servidor.
+
+ARCHIVOS INCLUIDOS
+- firebase.json
+- firestore.indexes.json
+- firestore.rules
+- functions/index.js
+- src/services/firebase.js
+- src/services/operationalTime.js
+- src/composables/usePrestamos.js
+- src/composables/useAdeudosProductos.js
+- src/pages/Prestamos.vue

@@ -8,14 +8,17 @@ import {
   doc,
   updateDoc,
   deleteDoc,
-  query,
-  where
+  onSnapshot,
+  runTransaction
 } from 'firebase/firestore'
 
 const PRODUCTS_COLLECTION = 'productos_nuevos'
 const products = ref([])
 const loading = ref(false)
 const error = ref(null)
+let unsubscribeProducts = null
+let productsListenerPromise = null
+let rejectProductsListener = null
 
 export const AREAS_TALLER = ['OFICINA', 'BODEGA', 'SEGUNDO_PISO']
 export const AREA_LABELS = {
@@ -131,7 +134,6 @@ const normalizeProductData = (productData = {}, { partial = false } = {}) => {
     if ('descripcion' in payload) updates.descripcion = String(payload.descripcion || '').trim()
     if ('codigoBarras' in payload) updates.codigoBarras = String(payload.codigoBarras || '').trim()
     if ('activo' in payload) updates.activo = payload.activo !== false
-    if ('generaAdeudo' in payload) updates.generaAdeudo = payload.generaAdeudo === false ? false : true
     if ('stockMinimo' in payload) updates.stockMinimo = toNonNegativeInteger(payload.stockMinimo)
     if ('precio' in payload) {
       const precio = Number(payload.precio)
@@ -191,8 +193,7 @@ const normalizeProductData = (productData = {}, { partial = false } = {}) => {
         ? precio
         : null,
     codigoBarras: String(payload.codigoBarras || '').trim(),
-    activo: payload.activo === false ? false : true,
-    generaAdeudo: payload.generaAdeudo === false ? false : true
+    activo: payload.activo === false ? false : true
   }
 }
 
@@ -298,23 +299,104 @@ export function useProducts() {
     }
   }
 
+  const startProductsListener = async () => {
+    if (productsListenerPromise) return productsListenerPromise
+    if (unsubscribeProducts) return products.value
+
+    loading.value = true
+    error.value = null
+    productsListenerPromise = new Promise((resolve, reject) => {
+      rejectProductsListener = reject
+      let firstSnapshot = true
+      unsubscribeProducts = onSnapshot(
+        collection(db, PRODUCTS_COLLECTION),
+        (snapshot) => {
+          products.value = snapshot.docs.map(mapProductDoc)
+          loading.value = false
+          if (firstSnapshot) {
+            firstSnapshot = false
+            productsListenerPromise = null
+            rejectProductsListener = null
+            resolve(products.value)
+          }
+        },
+        (err) => {
+          error.value = mapProductsErrorMessage(err)
+          loading.value = false
+          unsubscribeProducts = null
+          productsListenerPromise = null
+          rejectProductsListener = null
+          if (firstSnapshot) reject(err)
+          else console.error('Se perdió la sincronización de productos:', err)
+        }
+      )
+    })
+
+    return productsListenerPromise
+  }
+
+  const stopProductsListener = () => {
+    if (unsubscribeProducts) unsubscribeProducts()
+    if (rejectProductsListener) {
+      rejectProductsListener(new Error('La sesión terminó antes de cargar los productos.'))
+    }
+    unsubscribeProducts = null
+    productsListenerPromise = null
+    rejectProductsListener = null
+    products.value = []
+  }
+
   const getProducts = async (filters = {}) => {
+    await startProductsListener()
+    return products.value.filter((product) => {
+      if (filters.tipo && product.tipo !== filters.tipo) return false
+      if (filters.categoriaControl && product.categoriaControl !== filters.categoriaControl) return false
+      if (filters.activo !== undefined && product.activo !== filters.activo) return false
+      return true
+    })
+  }
+
+  const adjustProductStock = async (id, { area, stockDelta = 0, stockEmpezadoDelta = 0 } = {}) => {
+    const areaKey = normalizeAreaKey(area)
+    if (!AREAS_TALLER.includes(areaKey)) throw new Error('Área de inventario inválida.')
+    if (!Number.isInteger(stockDelta) || !Number.isInteger(stockEmpezadoDelta)) {
+      throw new Error('Los ajustes de stock deben ser números enteros.')
+    }
+
     loading.value = true
     error.value = null
     try {
-      const constraints = []
-      if (filters.tipo) constraints.push(where('tipo', '==', filters.tipo))
-      if (filters.categoriaControl) constraints.push(where('categoriaControl', '==', filters.categoriaControl))
-      if (filters.activo !== undefined) constraints.push(where('activo', '==', filters.activo))
+      const productRef = doc(db, PRODUCTS_COLLECTION, id)
+      return await runTransaction(db, async (transaction) => {
+        const snapshot = await transaction.get(productRef)
+        if (!snapshot.exists()) throw new Error('El producto ya no existe.')
 
-      const q = constraints.length
-        ? query(collection(db, PRODUCTS_COLLECTION), ...constraints)
-        : query(collection(db, PRODUCTS_COLLECTION))
+        const current = snapshot.data()
+        const categoriaControl = normalizeCategoriaControl(current.categoriaControl, current.tipo)
+        if (categoriaControl !== 'FRACCIONABLE' && stockEmpezadoDelta !== 0) {
+          throw new Error('Solo un producto fraccionable puede tener stock empezado.')
+        }
 
-      const snapshot = await getDocs(q)
-      products.value = snapshot.docs.map(mapProductDoc)
+        const stockPorArea = normalizeStockPorArea(current, categoriaControl)
+        const nextStock = stockPorArea[areaKey].stock + stockDelta
+        const nextStockEmpezado = stockPorArea[areaKey].stockEmpezado + stockEmpezadoDelta
+        if (nextStock < 0 || nextStockEmpezado < 0) throw new Error('El ajuste dejaría el stock en un valor negativo.')
 
-      return products.value
+        stockPorArea[areaKey] = {
+          stock: nextStock,
+          stockEmpezado: categoriaControl === 'FRACCIONABLE' ? nextStockEmpezado : 0
+        }
+        const totals = getTotalsFromStockPorArea(stockPorArea)
+        const updatedAt = new Date().toISOString()
+        transaction.update(productRef, {
+          stockPorArea,
+          stock: totals.stock,
+          stockEmpezado: categoriaControl === 'FRACCIONABLE' ? totals.stockEmpezado : 0,
+          updatedAt
+        })
+
+        return mapProductDoc({ id, data: () => ({ ...current, stockPorArea, updatedAt }) })
+      })
     } catch (err) {
       error.value = mapProductsErrorMessage(err)
       throw err
@@ -381,6 +463,9 @@ export function useProducts() {
     error,
     createProduct,
     getProducts,
+    startProductsListener,
+    stopProductsListener,
+    adjustProductStock,
     migrateLegacyProductsToStockPorArea,
     getProductById,
     updateProduct,

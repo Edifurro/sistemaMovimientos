@@ -53,7 +53,7 @@
           <div class="hero-copy">
             <span class="eyebrow">Operación diaria</span>
             <h2>Préstamos</h2>
-            <p>Controla préstamos diarios de Oficina y Bodega.</p>
+            <p>Controla préstamos diarios de Oficina, Bodega y Segundo Piso.</p>
           </div>
           <div class="hero-actions">
             <ion-button color="success" expand="block" class="hero-button" @click="openPrestamoModal()">
@@ -197,7 +197,7 @@
                     </div>
                     <div class="work-legend-row work-legend-row--trabajo">
                       <span class="work-legend-key">Áreas</span>
-                      <strong class="work-legend-value">Oficina / Bodega</strong>
+                      <strong class="work-legend-value">Oficina / Bodega / Segundo Piso</strong>
                     </div>
                   </div>
 
@@ -415,35 +415,44 @@
                 </ion-item>
 
                 <div slot="content" class="cart-product-accordion-content">
-                  <ion-accordion-group class="cart-area-accordion-group" :multiple="true">
-                    <ion-accordion
+                  <div
+                    v-if="getCartGroupAreaEntries(group).length > 1"
+                    class="area-switcher"
+                    aria-label="Seleccionar área de stock"
+                  >
+                    <button
                       v-for="entry in getCartGroupAreaEntries(group)"
-                      :key="getCartItemKey(entry.item)"
-                      :value="`cart-area-${getCartItemKey(entry.item)}`"
-                      class="cart-area-accordion"
-                      :class="{
-                        'has-quantity': getCartItemTotal(entry.item) > 0,
-                        'is-empty-stock': getCartStockLimit(entry.item, 'total') <= 0
-                      }"
+                      :key="`cart-switch-${getCartItemKey(entry.item)}`"
+                      type="button"
+                      class="area-switcher-button"
+                      :class="{ 'is-active': getSelectedCartArea(group) === normalizeAreaKey(entry.item.areaOrigen) }"
+                      @click="selectCartArea(group, entry.item.areaOrigen)"
                     >
-                      <ion-item slot="header" lines="none" class="cart-area-accordion-header">
-                        <ion-label>
-                          <div class="cart-area-accordion-title">
-                            <div>
-                              <span class="eyebrow">Área</span>
-                              <h4>{{ getAreaLabel(entry.item.areaOrigen) }}</h4>
-                            </div>
-                            <div class="cart-area-header-badges">
-                              <span class="ui-chip ui-chip--muted">Stock {{ getCartStockLimit(entry.item, 'total') }}</span>
-                              <span class="ui-chip" :class="getCartItemTotal(entry.item) > 0 ? 'ui-chip--success' : 'ui-chip--muted'">
-                                {{ getCartItemTotal(entry.item) }} en carrito
-                              </span>
-                            </div>
-                          </div>
-                        </ion-label>
-                      </ion-item>
+                      <span>{{ getAreaLabel(entry.item.areaOrigen) }}</span>
+                      <strong>{{ getCartItemTotal(entry.item) }}</strong>
+                    </button>
+                  </div>
 
-                      <div slot="content" class="cart-area-accordion-content">
+                  <div
+                    v-for="entry in getVisibleCartGroupAreaEntries(group)"
+                    :key="getCartItemKey(entry.item)"
+                    class="cart-area-direct-panel"
+                    :class="{ 'has-quantity': getCartItemTotal(entry.item) > 0 }"
+                  >
+                    <div class="direct-area-heading">
+                      <div>
+                        <span class="eyebrow">Stock de origen</span>
+                        <h4>{{ getAreaLabel(entry.item.areaOrigen) }}</h4>
+                      </div>
+                      <div class="cart-area-header-badges">
+                        <span class="ui-chip ui-chip--muted">{{ getProductAreaAvailabilityShort(group.producto, entry.item.areaOrigen) }}</span>
+                        <span class="ui-chip" :class="getCartItemTotal(entry.item) > 0 ? 'ui-chip--success' : 'ui-chip--muted'">
+                          {{ getCartItemTotal(entry.item) }} en carrito
+                        </span>
+                      </div>
+                    </div>
+
+                    <div class="cart-area-accordion-content cart-area-direct-content">
                         <div class="cart-area-stock-note">
                           <span>Stock</span>
                           <strong>{{ getProductAreaAvailabilityShort(group.producto, entry.item.areaOrigen) }}</strong>
@@ -512,9 +521,8 @@
                             :legacy="true"
                           ></ion-textarea>
                         </ion-item>
-                      </div>
-                    </ion-accordion>
-                  </ion-accordion-group>
+                    </div>
+                  </div>
 
                   <ion-button color="danger" fill="clear" class="remove-product-button" @click="removeProductFromCart(group.productoId)">
                     Quitar producto
@@ -561,14 +569,13 @@
           <section class="toolbar-card picker-toolbar">
             <div class="toolbar-copy">
               <h3>Catálogo</h3>
-              <p>Toca un producto para agregarlo o quitarlo.</p>
+              <p>Agrega directamente desde el área que tiene existencias.</p>
             </div>
             <ion-searchbar v-model="productSearchTerm" placeholder="Buscar nombre o código" :debounce="200" class="product-searchbar"></ion-searchbar>
           </section>
 
           <ion-list v-if="filteredProductsByName.length" lines="none" class="picker-list">
             <ion-item
-              button
               detail="false"
               lines="none"
               v-for="producto in filteredProductsByName"
@@ -576,7 +583,6 @@
               class="picker-product-card"
               :class="{ 'is-product-selected': isProductInCart(producto.id) }"
               :disabled="getProductTotalAvailableAllAreas(producto) <= 0 && !isProductInCart(producto.id)"
-              @click="toggleProductInCart(producto)"
             >
               <div class="picker-product-content">
                 <div class="prestamo-topline">
@@ -586,11 +592,36 @@
                   </div>
                   <div class="compact-chip-row">
                     <span class="ui-chip ui-chip--muted">{{ getControlLabel(producto) }}</span>
-                    <span v-if="isProductInCart(producto.id)" class="ui-chip ui-chip--success">Seleccionado</span>
+                    <span v-if="isProductInCart(producto.id)" class="ui-chip ui-chip--success">
+                      {{ getCartProductTotal(producto.id) }} en carrito
+                    </span>
                   </div>
                 </div>
 
+                <div class="picker-area-actions">
+                  <button
+                    v-for="area in getAvailableAreasForProduct(producto)"
+                    :key="`${producto.id}-${area}`"
+                    type="button"
+                    class="picker-area-add-button"
+                    @click.stop="quickAddProductArea(producto, area)"
+                  >
+                    <span>
+                      <strong>{{ getAvailableAreasForProduct(producto).length === 1 ? 'Agregar' : getAreaLabel(area) }}</strong>
+                      <small>{{ getProductAreaAvailabilityShort(producto, area) }}</small>
+                    </span>
+                    <b>+1</b>
+                  </button>
+                </div>
 
+                <button
+                  v-if="isProductInCart(producto.id)"
+                  type="button"
+                  class="picker-remove-button"
+                  @click.stop="removeProductFromCart(producto.id)"
+                >
+                  Quitar del carrito
+                </button>
               </div>
             </ion-item>
           </ion-list>
@@ -639,9 +670,9 @@
                     </div>
                     <span
                       class="ui-chip"
-                      :class="getDetailGroupStats(group).pendiente <= 0 ? 'ui-chip--muted' : 'ui-chip--warning'"
+                      :class="getDetailGroupDraftPending(group) <= 0 ? 'ui-chip--success' : 'ui-chip--warning'"
                     >
-                      {{ getDetailGroupStats(group).pendiente <= 0 ? 'Resuelto' : getControlLabel(group.sample) }}
+                      {{ getDetailGroupDraftPending(group) <= 0 ? 'Listo' : getControlLabel(group.sample) }}
                     </span>
                   </div>
 
@@ -662,7 +693,7 @@
                     </div>
                     <div class="stock-metric">
                       <span>Pendiente</span>
-                      <strong>{{ getDetailGroupStats(group).pendiente }}</strong>
+                      <strong>{{ getDetailGroupDraftPending(group) }}</strong>
                     </div>
                     <div class="stock-metric">
                       <span>Devuelto</span>
@@ -696,27 +727,42 @@
                   </ul>
                 </section>
 
-                <ion-accordion-group class="area-review-accordion-group" :multiple="true">
-                  <ion-accordion
-                    v-for="item in getDetailGroupAreaEntries(group)"
-                    :key="getDetailKey(item)"
-                    :value="`area-${getDetailKey(item)}`"
-                    class="area-review-accordion"
-                    :class="{ 'area-review-accordion--resolved': isDetalleResolved(item) }"
+                <div
+                  v-if="getDetailGroupAreaEntries(group).length > 1"
+                  class="area-switcher review-area-switcher"
+                  aria-label="Seleccionar área de devolución"
+                >
+                  <button
+                    v-for="areaItem in getDetailGroupAreaEntries(group)"
+                    :key="`review-switch-${getDetailKey(areaItem)}`"
+                    type="button"
+                    class="area-switcher-button"
+                    :class="{ 'is-active': getSelectedReviewArea(group) === normalizeAreaKey(areaItem.areaOrigen) }"
+                    @click="selectReviewArea(group, areaItem.areaOrigen)"
                   >
-                    <ion-item slot="header" lines="none" class="area-review-header">
-                      <div class="area-review-header-content">
-                        <div>
-                          <h4>{{ getAreaLabel(item.areaOrigen) }}</h4>
-                          <p>Nuevos {{ getDetalleStats(item).nuevos }} · Empezados {{ getDetalleStats(item).empezados }}</p>
-                        </div>
-                        <span class="ui-chip" :class="getDetalleStats(item).pendiente > 0 ? 'ui-chip--warning' : 'ui-chip--success'">
-                          Pend. {{ getDetalleStats(item).pendiente }}
-                        </span>
-                      </div>
-                    </ion-item>
+                    <span>{{ getAreaLabel(areaItem.areaOrigen) }}</span>
+                    <strong>Pend. {{ getDraftPending(areaItem) }}</strong>
+                  </button>
+                </div>
 
-                    <div slot="content" class="area-review-content">
+                <section
+                  v-for="item in getVisibleReviewAreaEntries(group)"
+                  :key="getDetailKey(item)"
+                  class="review-area-direct-panel"
+                  :class="{ 'is-resolved': getDraftPending(item) <= 0 }"
+                >
+                  <div class="direct-area-heading review-direct-heading">
+                    <div>
+                      <span class="eyebrow">Stock de origen</span>
+                      <h4>{{ getAreaLabel(item.areaOrigen) }}</h4>
+                      <p>Nuevos <strong>{{ getDetalleStats(item).nuevos }}</strong> · Empezados <strong>{{ getDetalleStats(item).empezados }}</strong></p>
+                    </div>
+                    <span class="ui-chip" :class="getDraftPending(item) > 0 ? 'ui-chip--warning' : 'ui-chip--success'">
+                      Pend. {{ getDraftPending(item) }}
+                    </span>
+                  </div>
+
+                  <div class="area-review-content">
                       <div class="stock-grid release-summary-grid area-release-summary-grid">
                         <div class="stock-metric stock-metric--main">
                           <span>Total</span>
@@ -740,45 +786,23 @@
                         </div>
                       </div>
 
-                      <div v-if="!isReadOnlyDetail && !isDetalleResolved(item)" class="quick-review-actions">
-                        <button type="button" class="quick-review-button quick-review-button--success" @click="setLiberationQuickAction(item, 'cantidadDevuelta')">
-                          Todo devuelto
-                        </button>
-                        <button
-                          v-if="item.categoriaControl === 'FRACCIONABLE'"
-                          type="button"
-                          class="quick-review-button quick-review-button--primary"
-                          @click="setLiberationQuickAction(item, 'cantidadDevueltaComoEmpezado')"
-                        >
-                          Todo empezado
-                        </button>
-                        <button type="button" class="quick-review-button quick-review-button--warning" @click="setLiberationQuickAction(item, 'cantidadConsumida')">
-                          Todo consumido
-                        </button>
-                        <button type="button" class="quick-review-button quick-review-button--clear" @click="clearLiberationQuickAction(item)">
-                          Limpiar
-                        </button>
-                      </div>
-
                       <div v-if="!isReadOnlyDetail && isDetalleResolved(item)" class="resolved-review-note">
                         <strong>Producto resuelto</strong>
                         <span>Este registro ya no tiene cantidades pendientes.</span>
                       </div>
 
-                      <ion-accordion-group v-if="!isReadOnlyDetail && !isDetalleResolved(item)" class="release-accordion-group release-accordion-group--large" :multiple="true">
-                        <ion-accordion :value="`${getDetailKey(item)}-devuelto-nuevo`" class="release-action-accordion">
-                          <ion-item slot="header" lines="none" class="release-accordion-header">
-                            <div class="release-header-content">
-                              <div>
-                                <h4>Devuelto completo</h4>
-                                <p>Regresa completo a {{ getAreaLabel(item.areaOrigen) }}.</p>
-                              </div>
-                              <span class="ui-chip ui-chip--muted">{{ getLiberationQuantity(item, 'cantidadDevuelta') }}</span>
+                      <div v-if="!isReadOnlyDetail && !isDetalleResolved(item)" class="return-disposition-grid">
+                        <article class="return-disposition-card return-disposition-card--complete">
+                          <div class="return-disposition-heading">
+                            <div>
+                              <h4>Devuelto completo</h4>
+                              <p>Reingresa como <strong>stock completo</strong>.</p>
                             </div>
-                          </ion-item>
-                          <div slot="content" class="release-action-card release-action-content">
+                            <span class="ui-chip return-count-chip">{{ getLiberationQuantity(item, 'cantidadDevuelta') }}</span>
+                          </div>
+                          <div class="release-action-content">
                             <div class="release-quantity-row">
-                              <span>Cant.</span>
+                              <strong>Cantidad</strong>
                               <div class="release-stepper cart-stepper">
                                 <ion-button fill="clear" class="stepper-btn release-stepper-btn" @click="changeLiberationQuantity(item, 'cantidadDevuelta', -1)">
                                   <ion-icon slot="icon-only" :icon="remove"></ion-icon>
@@ -798,25 +822,23 @@
                               </div>
                             </div>
                             <ion-item lines="none" class="release-comment-input">
-                              <ion-label position="stacked">Comentario</ion-label>
-                              <ion-textarea v-model="liberationItems[getDetailKey(item)].comentarioDevuelto" rows="2" :legacy="true"></ion-textarea>
+                              <ion-label position="stacked"><strong>Comentario</strong> <span>(opcional)</span></ion-label>
+                              <ion-textarea v-model="liberationItems[getDetailKey(item)].comentarioDevuelto" rows="3" placeholder="Agrega una nota sobre la devolución" :legacy="true"></ion-textarea>
                             </ion-item>
                           </div>
-                        </ion-accordion>
+                        </article>
 
-                        <ion-accordion v-if="item.categoriaControl === 'FRACCIONABLE'" :value="`${getDetailKey(item)}-devuelto-empezado`" class="release-action-accordion">
-                          <ion-item slot="header" lines="none" class="release-accordion-header">
-                            <div class="release-header-content">
-                              <div>
-                                <h4>Devuelto empezado</h4>
-                                <p>Regresa abierto a {{ getAreaLabel(item.areaOrigen) }}.</p>
-                              </div>
-                              <span class="ui-chip ui-chip--muted">{{ getLiberationQuantity(item, 'cantidadDevueltaComoEmpezado') }}</span>
+                        <article v-if="item.categoriaControl === 'FRACCIONABLE'" class="return-disposition-card return-disposition-card--opened">
+                          <div class="return-disposition-heading">
+                            <div>
+                              <h4>Devuelto empezado</h4>
+                              <p>Reingresa como <strong>envase abierto</strong>.</p>
                             </div>
-                          </ion-item>
-                          <div slot="content" class="release-action-card release-action-content">
+                            <span class="ui-chip return-count-chip">{{ getLiberationQuantity(item, 'cantidadDevueltaComoEmpezado') }}</span>
+                          </div>
+                          <div class="release-action-content">
                             <div class="release-quantity-row">
-                              <span>Cant.</span>
+                              <strong>Cantidad</strong>
                               <div class="release-stepper cart-stepper">
                                 <ion-button fill="clear" class="stepper-btn release-stepper-btn" @click="changeLiberationQuantity(item, 'cantidadDevueltaComoEmpezado', -1)">
                                   <ion-icon slot="icon-only" :icon="remove"></ion-icon>
@@ -836,25 +858,23 @@
                               </div>
                             </div>
                             <ion-item lines="none" class="release-comment-input">
-                              <ion-label position="stacked">Comentario *</ion-label>
-                              <ion-textarea v-model="liberationItems[getDetailKey(item)].comentarioDevueltoComoEmpezado" rows="2" :legacy="true"></ion-textarea>
+                              <ion-label position="stacked"><strong>Comentario</strong> <span class="required-mark">*</span></ion-label>
+                              <ion-textarea v-model="liberationItems[getDetailKey(item)].comentarioDevueltoComoEmpezado" rows="3" placeholder="Describe el estado del envase abierto" :legacy="true"></ion-textarea>
                             </ion-item>
                           </div>
-                        </ion-accordion>
+                        </article>
 
-                        <ion-accordion :value="`${getDetailKey(item)}-consumido`" class="release-action-accordion">
-                          <ion-item slot="header" lines="none" class="release-accordion-header">
-                            <div class="release-header-content">
-                              <div>
-                                <h4>Consumido</h4>
-                                <p>Material usado con soporte.</p>
-                              </div>
-                              <span class="ui-chip ui-chip--muted">{{ getLiberationQuantity(item, 'cantidadConsumida') }}</span>
+                        <article class="return-disposition-card return-disposition-card--consumed">
+                          <div class="return-disposition-heading">
+                            <div>
+                              <h4>Consumido</h4>
+                              <p>Se utilizó y <strong>no regresa a stock</strong>.</p>
                             </div>
-                          </ion-item>
-                          <div slot="content" class="release-action-card release-action-content">
+                            <span class="ui-chip return-count-chip">{{ getLiberationQuantity(item, 'cantidadConsumida') }}</span>
+                          </div>
+                          <div class="release-action-content">
                             <div class="release-quantity-row">
-                              <span>Cant.</span>
+                              <strong>Cantidad</strong>
                               <div class="release-stepper cart-stepper">
                                 <ion-button fill="clear" class="stepper-btn release-stepper-btn" @click="changeLiberationQuantity(item, 'cantidadConsumida', -1)">
                                   <ion-icon slot="icon-only" :icon="remove"></ion-icon>
@@ -874,20 +894,15 @@
                               </div>
                             </div>
                             <ion-item lines="none" class="release-comment-input">
-                              <ion-label position="stacked">Comentario *</ion-label>
-                              <ion-textarea v-model="liberationItems[getDetailKey(item)].comentarioConsumo" rows="2" :legacy="true"></ion-textarea>
+                              <ion-label position="stacked"><strong>Comentario</strong> <span class="required-mark">*</span></ion-label>
+                              <ion-textarea v-model="liberationItems[getDetailKey(item)].comentarioConsumo" rows="3" placeholder="Indica cómo se utilizó el producto" :legacy="true"></ion-textarea>
                             </ion-item>
                           </div>
-                        </ion-accordion>
+                        </article>
+                      </div>
 
-                        <div class="automatic-debt-hint">
-                          <strong>Adeudo al finalizar</strong>
-                          <p>Después de registrar lo devuelto o consumido, lo que permanezca pendiente se convertirá en adeudo únicamente al finalizar la revisión.</p>
-                        </div>
-                      </ion-accordion-group>
-                    </div>
-                  </ion-accordion>
-                </ion-accordion-group>
+                  </div>
+                </section>
               </div>
             </ion-accordion>
           </ion-accordion-group>
@@ -908,15 +923,12 @@
             </div>
           </section>
 
-          <section v-if="!isReadOnlyDetail" class="closing-card modern-form-card">
+          <section v-if="canFinalizeReview" class="closing-card modern-form-card">
+            <div class="closing-ready-copy">
+              <strong>Revisión lista para finalizar</strong>
+              <span>Todos los artículos quedarán comprobados con esta guardada.</span>
+            </div>
             <ion-item lines="none">
-              <ion-checkbox v-model="closeDailyLoan" slot="start"></ion-checkbox>
-              <ion-label>Finalizar revisión y cerrar este préstamo</ion-label>
-            </ion-item>
-            <p v-if="closeDailyLoan && getSelectedPrestamoPendingTotal() > 0" class="closure-auto-debt-note">
-              Los pendientes se registrarán como adeudo al cerrar.
-            </p>
-            <ion-item v-if="closeDailyLoan" lines="none">
               <ion-label position="stacked">Observación de cierre</ion-label>
               <ion-textarea v-model="observacionCierre" rows="3" :legacy="true"></ion-textarea>
             </ion-item>
@@ -925,9 +937,14 @@
       </ion-content>
       <ion-footer v-if="!isReadOnlyDetail" class="modal-footer">
         <ion-toolbar>
-          <ion-button expand="block" class="primary-action" @click="saveLiberacion" :disabled="loading">
-            {{ loading ? 'Guardando...' : closeDailyLoan ? 'Finalizar revisión' : 'Guardar avances' }}
-          </ion-button>
+          <div class="review-footer-actions">
+            <ion-button expand="block" fill="outline" class="primary-action" @click="saveLiberacion(false)" :disabled="loading">
+              {{ loading ? 'Guardando...' : 'Guardar avances' }}
+            </ion-button>
+            <ion-button v-if="canFinalizeReview" expand="block" color="success" class="primary-action" @click="saveLiberacion(true)" :disabled="loading">
+              Guardar y finalizar
+            </ion-button>
+          </div>
         </ion-toolbar>
       </ion-footer>
     </ion-modal>
@@ -1007,7 +1024,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { Capacitor } from '@capacitor/core'
 import { BarcodeFormat, BarcodeScanner } from '@capacitor-mlkit/barcode-scanning'
@@ -1040,7 +1057,6 @@ import {
   IonInput,
   IonToggle,
   IonToast,
-  IonCheckbox,
   IonSpinner,
   IonCard,
   IonCardHeader,
@@ -1054,13 +1070,13 @@ import { add, apps, home, cube, people, swapHorizontal, scan, clipboardOutline, 
 const router = useRouter()
 const {
   prestamos,
+  prestamosSummary: prestamosCountSummary,
   loading,
   error,
   createPrestamo,
-  getPrestamos,
-  getPrestamosHoy,
-  getPrestamosRevision,
-  getPrestamosCerrados,
+  getPrestamosSummary,
+  subscribePrestamos,
+  stopPrestamosListener,
   liberarPrestamoDiario,
   formatFechaOperativa,
   calcularPendienteDetalle
@@ -1071,7 +1087,8 @@ const {
   adeudosProductos,
   loading: adeudosLoading,
   error: adeudosError,
-  getAdeudosPendientes,
+  startAdeudosPendientesListener,
+  stopAdeudosPendientesListener,
   getAdeudosByColaborador,
   saldarAdeudoProducto
 } = useAdeudosProductos()
@@ -1090,21 +1107,22 @@ const showToast = ref(false)
 const toastMessage = ref('')
 const productSearchTerm = ref('')
 const selectedColaboradorAdeudos = ref([])
-const closeDailyLoan = ref(false)
 const observacionCierre = ref('')
 const liberationItems = ref({})
+const selectedCartAreaByProduct = ref({})
+const selectedReviewAreaByProduct = ref({})
 
-const AREAS_TALLER = ['OFICINA', 'BODEGA']
+const AREAS_TALLER = ['OFICINA', 'BODEGA', 'SEGUNDO_PISO']
 const AREA_LABELS = { OFICINA: 'Oficina', BODEGA: 'Bodega', SEGUNDO_PISO: 'Segundo Piso' }
 const TIPO_PRESTAMO = 'PRESTAMO'
 
 const getCurrentMonthRange = () => {
-  const now = new Date()
-  const start = new Date(now.getFullYear(), now.getMonth(), 1)
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+  const today = formatFechaOperativa()
+  const [year, month] = today.split('-').map(Number)
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
   return {
-    fechaInicio: formatFechaOperativa(start),
-    fechaFin: formatFechaOperativa(end)
+    fechaInicio: `${year}-${String(month).padStart(2, '0')}-01`,
+    fechaFin: `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
   }
 }
 
@@ -1160,6 +1178,10 @@ const MODULE_INSTALL_TIMEOUT_MS = 20000
 const MODULE_INSTALL_POLL_MS = 1000
 
 const isReadOnlyDetail = computed(() => selectedDetailMode.value === 'readonly')
+const canFinalizeReview = computed(() => {
+  if (isReadOnlyDetail.value || selectedPrestamoDetail.value?.estado !== 'pendiente_revision') return false
+  return (selectedPrestamoDetail.value?.detalles || []).every((item) => getDraftPending(item) <= 0)
+})
 
 const availableColaboradores = computed(() => colaboradores.value.filter((c) => c.activo !== false))
 const colaboradoresFilterOptions = computed(() => [...colaboradores.value].sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es')))
@@ -1248,19 +1270,6 @@ const canAddItem = computed(() => {
 })
 
 const canSavePrestamo = computed(() => Boolean(newPrestamo.value.colaboradorId) && newPrestamo.value.detalles.some((item) => getCartItemTotal(item) > 0))
-
-const getUserFromStorage = () => {
-  try {
-    const userJSON = localStorage.getItem('user')
-    const user = userJSON ? JSON.parse(userJSON) : null
-    return {
-      usuarioId: user?.uid || user?.id || null,
-      usuarioNombre: user?.nombre || user?.email || 'Usuario'
-    }
-  } catch {
-    return { usuarioId: null, usuarioNombre: 'Usuario' }
-  }
-}
 
 const normalizeAreaKey = (value) => {
   const raw = String(value || '').trim().toUpperCase().replace(/\s+/g, '_')
@@ -1389,6 +1398,26 @@ const getCartGroupAreaEntries = (group) => {
     .sort((a, b) => AREAS_TALLER.indexOf(normalizeAreaKey(a.item.areaOrigen)) - AREAS_TALLER.indexOf(normalizeAreaKey(b.item.areaOrigen)))
 }
 
+const getSelectedCartArea = (group) => {
+  const entries = getCartGroupAreaEntries(group)
+  const selected = normalizeAreaKey(selectedCartAreaByProduct.value[group?.productoId])
+  return entries.some((entry) => normalizeAreaKey(entry.item.areaOrigen) === selected)
+    ? selected
+    : normalizeAreaKey(entries[0]?.item?.areaOrigen)
+}
+
+const selectCartArea = (group, area) => {
+  if (!group?.productoId) return
+  selectedCartAreaByProduct.value[group.productoId] = normalizeAreaKey(area)
+}
+
+const getVisibleCartGroupAreaEntries = (group) => {
+  const entries = getCartGroupAreaEntries(group)
+  if (entries.length <= 1) return entries
+  const selected = getSelectedCartArea(group)
+  return entries.filter((entry) => normalizeAreaKey(entry.item.areaOrigen) === selected)
+}
+
 const getCartGroupAreaSummaries = (group) => {
   if (!group?.items?.length) return []
   return group.items
@@ -1493,7 +1522,6 @@ const createCartItemFromProduct = (producto, area = newPrestamo.value.areaOrigen
     cantidad: 0,
     cantidadDesdeStockNuevo: 0,
     cantidadDesdeStockEmpezado: 0,
-    generaAdeudo: producto.generaAdeudo !== false,
     observacion: ''
   }
 }
@@ -1532,6 +1560,12 @@ const toggleProductInCart = (producto) => {
   }
 
   ensureProductInCart(producto)
+}
+
+const quickAddProductArea = (producto, area) => {
+  const areaKey = normalizeAreaKey(area)
+  const added = addProductToCart(producto, areaKey, { allowFallback: false })
+  if (added) selectedCartAreaByProduct.value[producto.id] = areaKey
 }
 
 const findCartItemIndex = (productoId, area) => {
@@ -1702,6 +1736,26 @@ const getDetailGroupAreaEntries = (group) => [...(group?.items || [])]
     return AREAS_TALLER.indexOf(normalizeAreaKey(a.areaOrigen)) - AREAS_TALLER.indexOf(normalizeAreaKey(b.areaOrigen))
   })
 
+const getSelectedReviewArea = (group) => {
+  const entries = getDetailGroupAreaEntries(group)
+  const selected = normalizeAreaKey(selectedReviewAreaByProduct.value[group?.productoId])
+  return entries.some((item) => normalizeAreaKey(item.areaOrigen) === selected)
+    ? selected
+    : normalizeAreaKey(entries[0]?.areaOrigen)
+}
+
+const selectReviewArea = (group, area) => {
+  if (!group?.productoId) return
+  selectedReviewAreaByProduct.value[group.productoId] = normalizeAreaKey(area)
+}
+
+const getVisibleReviewAreaEntries = (group) => {
+  const entries = getDetailGroupAreaEntries(group)
+  if (entries.length <= 1) return entries
+  const selected = getSelectedReviewArea(group)
+  return entries.filter((item) => normalizeAreaKey(item.areaOrigen) === selected)
+}
+
 const getDetailGroupStats = (group) => {
   const items = group?.items || []
   return items.reduce((acc, item) => {
@@ -1729,6 +1783,9 @@ const getDetailGroupStats = (group) => {
   })
 }
 
+const getDetailGroupDraftPending = (group) => (group?.items || [])
+  .reduce((sum, item) => sum + getDraftPending(item), 0)
+
 const getDetailGroupAreaSummaries = (group) => getDetailGroupAreaEntries(group)
   .map((item) => ({
     area: normalizeAreaKey(item.areaOrigen),
@@ -1739,11 +1796,8 @@ const getDetailGroupAreaSummaries = (group) => getDetailGroupAreaEntries(group)
   .filter((summary) => summary.total > 0 || summary.pendiente > 0)
 
 const prestamosSummary = computed(() => {
-  const abiertos = prestamos.value.filter((prestamo) => prestamo.estado === 'abierto').length
-  const cerrados = prestamos.value.filter((prestamo) => prestamo.estado === 'cerrado' || prestamo.estado === 'cerrado_con_adeudo').length
-  const pendientes = prestamos.value.filter((prestamo) => prestamo.estado === 'pendiente_revision').length
   const adeudos = adeudosProductos.value.reduce((sum, adeudo) => sum + Number(adeudo.cantidadPendiente || 0), 0)
-  return { abiertos, cerrados, pendientes, adeudos }
+  return { ...prestamosCountSummary.value, adeudos }
 })
 
 const getCantidadPendiente = (item) => calcularPendienteDetalle(item)
@@ -1754,13 +1808,19 @@ const getSelectedPrestamoPendingTotal = () => (selectedPrestamoDetail.value?.det
 const liberationQuantityFields = [
   'cantidadDevuelta',
   'cantidadConsumida',
-  'cantidadDevueltaComoEmpezado',
-  'cantidadAdeudada'
+  'cantidadDevueltaComoEmpezado'
 ]
 
 const getLiberationData = (itemOrKey) => liberationItems.value[typeof itemOrKey === 'string' ? itemOrKey : getDetailKey(itemOrKey)] || {}
 
 const getLiberationQuantity = (itemOrKey, field) => Number(getLiberationData(itemOrKey)[field] || 0)
+
+const getDraftAllocated = (item) => liberationQuantityFields.reduce(
+  (sum, field) => sum + getLiberationQuantity(item, field),
+  0
+)
+
+const getDraftPending = (item) => Math.max(0, getCantidadPendiente(item) - getDraftAllocated(item))
 
 const getLiberationFieldLimit = (item, field) => {
   const data = getLiberationData(item)
@@ -1786,24 +1846,6 @@ const changeLiberationQuantity = (item, field, delta) => {
   if (!item?.productoId || !liberationItems.value[key]) return
   liberationItems.value[key][field] = Number(liberationItems.value[key][field] || 0) + Number(delta || 0)
   normalizeLiberationField(item, field)
-}
-
-const setLiberationQuickAction = (item, field) => {
-  const key = getDetailKey(item || {})
-  if (!item?.productoId || !liberationItems.value[key]) return
-  for (const quantityField of liberationQuantityFields) {
-    liberationItems.value[key][quantityField] = 0
-  }
-  liberationItems.value[key][field] = Math.max(0, Number(getCantidadPendiente(item || {}) || 0))
-  normalizeLiberationField(item, field)
-}
-
-const clearLiberationQuickAction = (item) => {
-  const key = getDetailKey(item || {})
-  if (!item?.productoId || !liberationItems.value[key]) return
-  for (const quantityField of liberationQuantityFields) {
-    liberationItems.value[key][quantityField] = 0
-  }
 }
 
 const normalizeAdeudoQuantity = () => {
@@ -1859,6 +1901,7 @@ const resetPrestamoForm = () => {
   itemForm.value = { productoId: '', cantidad: 0, cantidadDesdeStockNuevo: 0, cantidadDesdeStockEmpezado: 0, observacion: '' }
   newPrestamo.value = { tipoOperacion: TIPO_PRESTAMO, colaboradorId: '', colaboradorNombre: '', fechaOperativa: formatFechaOperativa(), areaOrigen: 'OFICINA', observaciones: '', detalles: [] }
   selectedColaboradorAdeudos.value = []
+  selectedCartAreaByProduct.value = {}
 }
 
 const openPrestamoModal = () => {
@@ -1918,12 +1961,10 @@ const savePrestamo = async () => {
     newPrestamo.value.detalles.forEach((_, index) => normalizeCartItem(index))
     const detallesValidos = newPrestamo.value.detalles.filter((item) => getCartItemTotal(item) > 0)
     const colaborador = availableColaboradores.value.find((c) => c.id === newPrestamo.value.colaboradorId)
-    const user = getUserFromStorage()
     await createPrestamo({
       ...newPrestamo.value,
       detalles: detallesValidos,
-      colaboradorNombre: colaborador?.nombre || newPrestamo.value.colaboradorNombre,
-      ...user
+      colaboradorNombre: colaborador?.nombre || newPrestamo.value.colaboradorNombre
     })
     toastMessage.value = 'Préstamo diario guardado correctamente.'
     showToast.value = true
@@ -1937,9 +1978,9 @@ const savePrestamo = async () => {
 const openPrestamoDetail = (prestamo, mode = 'review') => {
   selectedPrestamoDetail.value = JSON.parse(JSON.stringify(prestamo))
   selectedDetailMode.value = mode
-  closeDailyLoan.value = false
   observacionCierre.value = ''
   liberationItems.value = {}
+  selectedReviewAreaByProduct.value = {}
   ;(selectedPrestamoDetail.value.detalles || []).forEach((item) => {
     liberationItems.value[getDetailKey(item)] = {
       cantidadDevuelta: 0,
@@ -1947,10 +1988,14 @@ const openPrestamoDetail = (prestamo, mode = 'review') => {
       cantidadConsumida: 0,
       comentarioConsumo: '',
       cantidadDevueltaComoEmpezado: 0,
-      comentarioDevueltoComoEmpezado: '',
-      cantidadAdeudada: 0,
-      comentarioAdeudo: ''
+      comentarioDevueltoComoEmpezado: ''
     }
+  })
+  detailProductGroups.value.forEach((group) => {
+    selectedReviewAreaByProduct.value[group.productoId] = normalizeAreaKey(
+      getDetailGroupAreaEntries(group).find((item) => getCantidadPendiente(item) > 0)?.areaOrigen ||
+      getDetailGroupAreaEntries(group)[0]?.areaOrigen
+    )
   })
   isDetailModalOpen.value = true
 }
@@ -1964,7 +2009,7 @@ const getComentariosEntregaPorProducto = (itemOrProductoId) => {
     .map((mov) => ({ fecha: mov.fecha, cantidad: mov.cantidad, observacion: mov.observacion || '', areaOrigen: mov.areaOrigen }))
 }
 
-const saveLiberacion = async () => {
+const saveLiberacion = async (finalizeReview = false) => {
   formError.value = ''
   if (!selectedPrestamoDetail.value) return
   try {
@@ -1977,21 +2022,24 @@ const saveLiberacion = async () => {
         const source = (selectedPrestamoDetail.value.detalles || []).find((detail) => getDetailKey(detail) === key) || {}
         return { productoId: source.productoId || key.split('_')[0], areaOrigen: source.areaOrigen || 'OFICINA', ...data }
       })
-      .filter((item) => Number(item.cantidadDevuelta || 0) > 0 || Number(item.cantidadConsumida || 0) > 0 || Number(item.cantidadDevueltaComoEmpezado || 0) > 0 || Number(item.cantidadAdeudada || 0) > 0)
+      .filter((item) => Number(item.cantidadDevuelta || 0) > 0 || Number(item.cantidadConsumida || 0) > 0 || Number(item.cantidadDevueltaComoEmpezado || 0) > 0)
 
-    if (!detallesLiberacion.length && !closeDailyLoan.value) {
-      formError.value = 'Captura al menos una cantidad para liberar o activa el cierre definitivo.'
+    if (!detallesLiberacion.length && !finalizeReview) {
+      formError.value = 'Captura al menos una cantidad para liberar.'
       return
     }
 
-    const user = getUserFromStorage()
+    if (finalizeReview && !canFinalizeReview.value) {
+      formError.value = 'Solo puedes finalizar una revisión cuando todos los artículos estén comprobados.'
+      return
+    }
+
     await liberarPrestamoDiario(selectedPrestamoDetail.value.id, {
       detallesLiberacion,
-      cierreDefinitivo: closeDailyLoan.value,
-      observacionCierre: observacionCierre.value,
-      ...user
+      cierreDefinitivo: finalizeReview,
+      observacionCierre: observacionCierre.value
     })
-    toastMessage.value = closeDailyLoan.value ? 'Préstamo cerrado correctamente.' : 'Cambios guardados correctamente.'
+    toastMessage.value = finalizeReview ? 'Revisión finalizada y préstamo cerrado.' : 'Cambios guardados correctamente.'
     showToast.value = true
     closeDetailModal()
     await refreshAll()
@@ -2112,21 +2160,27 @@ const loadSegmentData = async () => {
   formError.value = ''
   const filters = buildListFilters()
   if (selectedSegment.value === 'hoy') {
-    await getPrestamosHoy(formatFechaOperativa())
+    await subscribePrestamos({
+      fechaOperativa: formatFechaOperativa(),
+      estados: ['abierto', 'activo']
+    })
   } else if (selectedSegment.value === 'revision') {
-    await getPrestamosRevision(filters)
+    await subscribePrestamos({ ...filters, estado: 'pendiente_revision' })
   } else if (selectedSegment.value === 'cerrados') {
-    await getPrestamosCerrados(filters)
+    await subscribePrestamos({
+      ...filters,
+      estado: filters.estado || undefined,
+      estados: filters.estado ? undefined : ['cerrado', 'cerrado_con_adeudo']
+    })
   } else if (selectedSegment.value === 'adeudos') {
-    await getAdeudosPendientes()
+    stopPrestamosListener()
   }
 }
 
 const refreshAll = async () => {
   normalizeDateRangeFilters()
-  await Promise.all([getProducts(), getColaboradores()])
+  await Promise.all([getProducts(), getColaboradores(), getPrestamosSummary()])
   await loadSegmentData()
-  if (selectedSegment.value !== 'adeudos') await getAdeudosPendientes().catch(() => {})
 }
 
 const onSegmentChange = async () => {
@@ -2136,7 +2190,15 @@ const onSegmentChange = async () => {
 }
 
 onMounted(async () => {
-  await refreshAll()
+  await Promise.all([
+    startAdeudosPendientesListener(),
+    refreshAll()
+  ])
+})
+
+onBeforeUnmount(() => {
+  stopPrestamosListener()
+  stopAdeudosPendientesListener()
 })
 </script>
 
@@ -8529,26 +8591,6 @@ ion-button {
 }
 
 
-.automatic-debt-hint {
-  margin-top: 0.55rem;
-  padding: 0.65rem 0.75rem;
-  border: 1px solid #fde68a;
-  border-radius: 12px;
-  background: #fffbeb;
-  color: #78350f;
-}
-
-.automatic-debt-hint strong {
-  display: block;
-  margin-bottom: 0.2rem;
-}
-
-.automatic-debt-hint p {
-  margin: 0;
-  font-size: 0.78rem;
-  line-height: 1.35;
-}
-
 /* Mejoras de revisión por rango y captura rápida */
 .filters-grid {
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -8574,54 +8616,6 @@ ion-button {
   border: 1px solid #cbd5e1;
   border-radius: 14px;
   overflow: hidden;
-}
-
-.quick-review-actions {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.45rem;
-  margin: 0 0 0.65rem;
-}
-
-.quick-review-button {
-  min-height: 46px;
-  padding: 0.55rem 0.5rem;
-  border: 1px solid #dbe3ee;
-  border-radius: 13px;
-  background: #ffffff;
-  color: #0f172a;
-  font-size: 0.78rem;
-  font-weight: 850;
-  cursor: pointer;
-  transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
-}
-
-.quick-review-button:active {
-  transform: scale(0.98);
-}
-
-.quick-review-button--success {
-  border-color: #bbf7d0;
-  background: #f0fdf4;
-  color: #166534;
-}
-
-.quick-review-button--primary {
-  border-color: #bfdbfe;
-  background: #eff6ff;
-  color: #1d4ed8;
-}
-
-.quick-review-button--warning {
-  border-color: #fed7aa;
-  background: #fff7ed;
-  color: #c2410c;
-}
-
-.quick-review-button--clear {
-  border-color: #cbd5e1;
-  background: #f8fafc;
-  color: #475569;
 }
 
 .resolved-review-note {
@@ -8693,18 +8687,428 @@ ion-button {
 }
 
 @media (max-width: 620px) {
-  .quick-review-actions {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .release-accordion-group--large .release-stepper {
     min-width: 150px;
   }
 }
 
-@media (max-width: 420px) {
-  .quick-review-actions {
+/* Flujos directos de área y devolución */
+.area-switcher {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 0.55rem;
+  margin-bottom: 0.75rem;
+}
+
+.area-switcher-button {
+  min-height: 50px;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 13px;
+  background: #ffffff;
+  color: #334155;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.area-switcher-button span {
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.area-switcher-button strong {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.area-switcher-button.is-active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+  box-shadow: 0 0 0 2px rgb(37 99 235 / 10%);
+}
+
+.cart-area-direct-panel,
+.review-area-direct-panel {
+  border: 1px solid #dbe3ef;
+  border-radius: 16px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.cart-area-direct-panel.has-quantity {
+  border-color: #86efac;
+}
+
+.review-area-direct-panel.is-resolved {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.direct-area-heading {
+  padding: 0.85rem;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.direct-area-heading h4,
+.return-disposition-heading h4 {
+  margin: 0.15rem 0 0;
+  color: #0f172a;
+  font-size: 0.95rem;
+}
+
+.direct-area-heading p,
+.return-disposition-heading p {
+  margin: 0.2rem 0 0;
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.cart-area-direct-content,
+.area-review-content {
+  padding: 0.85rem;
+}
+
+.picker-area-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+}
+
+.picker-area-add-button {
+  min-height: 54px;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 13px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.picker-area-add-button span {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.picker-area-add-button strong {
+  font-size: 0.82rem;
+}
+
+.picker-area-add-button small {
+  color: #475569;
+  font-size: 0.7rem;
+}
+
+.picker-area-add-button b {
+  font-size: 0.9rem;
+}
+
+.picker-remove-button {
+  width: 100%;
+  min-height: 42px;
+  margin-top: 0.5rem;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #b91c1c;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.return-disposition-grid {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 0.75rem !important;
+  margin-top: 0.8rem !important;
+}
+
+.return-disposition-card {
+  display: grid;
+  grid-template-columns: minmax(190px, 220px) minmax(0, 1fr);
+  border: 1px solid #dbe3ef;
+  border-left-width: 4px;
+  border-radius: 15px;
+  background: #ffffff;
+  overflow: hidden;
+  box-shadow: 0 5px 14px rgb(15 23 42 / 5%);
+}
+
+.return-disposition-card--complete {
+  border-color: #86efac;
+}
+
+.return-disposition-card--opened {
+  border-color: #fcd34d;
+}
+
+.return-disposition-card--consumed {
+  border-color: #fca5a5;
+}
+
+.return-disposition-heading {
+  min-height: 100%;
+  padding: 0.95rem;
+  border-right: 1px solid currentColor;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+  box-sizing: border-box;
+}
+
+.return-disposition-card--complete .return-disposition-heading {
+  color: #047857;
+  background: #ecfdf5;
+  border-color: #bbf7d0;
+}
+
+.return-disposition-card--opened .return-disposition-heading {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.return-disposition-card--consumed .return-disposition-heading {
+  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.return-disposition-heading h4 {
+  color: inherit !important;
+  font-size: 0.9rem !important;
+  font-weight: 900 !important;
+}
+
+.return-disposition-heading p {
+  color: #475569 !important;
+  font-size: 0.74rem !important;
+  line-height: 1.35 !important;
+}
+
+.return-disposition-heading p strong,
+.review-direct-heading p strong {
+  font-weight: 900;
+  color: inherit;
+}
+
+.return-count-chip {
+  flex: 0 0 auto;
+  min-width: 30px;
+  font-weight: 900;
+}
+
+.return-disposition-card--complete .return-count-chip {
+  color: #047857;
+  background: #dcfce7;
+  border-color: #bbf7d0;
+}
+
+.return-disposition-card--opened .return-count-chip {
+  color: #92400e;
+  background: #fef3c7;
+  border-color: #fde68a;
+}
+
+.return-disposition-card--consumed .return-count-chip {
+  color: #b91c1c;
+  background: #fee2e2;
+  border-color: #fecaca;
+}
+
+.return-disposition-card .release-action-content {
+  display: grid !important;
+  grid-template-columns: minmax(205px, 0.8fr) minmax(260px, 1.2fr) !important;
+  align-items: stretch !important;
+  gap: 0.8rem !important;
+  padding: 0.8rem !important;
+  border-top: 0 !important;
+}
+
+.return-disposition-card .release-quantity-row {
+  display: grid !important;
+  grid-template-columns: 72px minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: 0.6rem !important;
+  min-height: 92px !important;
+  padding: 0.75rem !important;
+  margin: 0 !important;
+}
+
+.return-disposition-card .release-quantity-row > strong {
+  color: #334155;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.return-disposition-card .release-stepper.cart-stepper {
+  display: grid !important;
+  grid-template-columns: 40px 58px 40px !important;
+  justify-content: end !important;
+  justify-self: stretch !important;
+  gap: 0.3rem !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 44px !important;
+}
+
+.return-disposition-card .release-stepper-btn,
+.return-disposition-card .release-stepper-btn::part(native) {
+  width: 40px !important;
+  height: 40px !important;
+  min-width: 40px !important;
+  min-height: 40px !important;
+  max-width: 40px !important;
+  max-height: 40px !important;
+}
+
+.return-disposition-card .release-stepper-btn ion-icon {
+  width: 18px !important;
+  height: 18px !important;
+  font-size: 18px !important;
+}
+
+.return-disposition-card .release-quantity-input {
+  width: 58px !important;
+  min-width: 58px !important;
+  max-width: 58px !important;
+  height: 44px !important;
+  min-height: 44px !important;
+  max-height: 44px !important;
+}
+
+.return-disposition-card .release-quantity-input::part(native) {
+  font-size: 1rem !important;
+  line-height: 44px !important;
+}
+
+.return-disposition-card .release-comment-input {
+  min-height: 92px !important;
+  margin: 0 !important;
+}
+
+.return-disposition-card .release-comment-input::part(native) {
+  min-height: 92px !important;
+  padding: 0.7rem 0.75rem !important;
+}
+
+.return-disposition-card .release-comment-input ion-label {
+  margin-bottom: 0.25rem !important;
+  color: #334155 !important;
+  font-size: 0.72rem !important;
+  line-height: 1.2 !important;
+}
+
+.return-disposition-card .release-comment-input ion-label strong {
+  font-weight: 900;
+}
+
+.return-disposition-card .release-comment-input ion-label span {
+  color: #64748b;
+  font-weight: 650;
+}
+
+.return-disposition-card .release-comment-input ion-label .required-mark {
+  color: #dc2626;
+  font-weight: 900;
+}
+
+.return-disposition-card .release-comment-input ion-textarea {
+  min-height: 58px !important;
+  font-size: 0.8rem !important;
+  line-height: 1.35 !important;
+  --padding-top: 0.28rem !important;
+  --padding-bottom: 0.15rem !important;
+}
+
+.closing-ready-copy {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.8rem;
+  color: #166534;
+}
+
+.closing-ready-copy span {
+  color: #475569;
+  font-size: 0.78rem;
+}
+
+.review-footer-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  padding: 0.45rem 0.75rem;
+}
+
+.review-footer-actions > ion-button:only-child {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 760px) {
+  .area-switcher,
+  .picker-area-actions,
+  .return-disposition-grid,
+  .review-footer-actions {
     grid-template-columns: 1fr;
+  }
+
+  .direct-area-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .direct-area-heading .cart-area-header-badges {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .return-disposition-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .return-disposition-heading {
+    min-height: auto;
+    border-right: 0;
+    border-bottom: 1px solid currentColor;
+  }
+
+  .return-disposition-card .release-action-content {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .return-disposition-card .release-quantity-row {
+    min-height: 76px !important;
+  }
+
+  .return-disposition-card .release-comment-input,
+  .return-disposition-card .release-comment-input::part(native) {
+    min-height: 104px !important;
+  }
+}
+
+@media (max-width: 420px) {
+  .return-disposition-card .release-quantity-row {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 0.45rem !important;
+  }
+
+  .return-disposition-card .release-stepper.cart-stepper {
+    justify-content: center !important;
   }
 }
 
