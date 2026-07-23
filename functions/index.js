@@ -333,7 +333,9 @@ exports.obtenerContextoOperativo = onCall(
     },
 );
 
-exports.procesarCicloPrestamosDiarios = onSchedule(
+// Se conserva el identificador de la función anterior para que Firebase
+// actualice el scheduler existente en lugar de desplegar dos procesos diarios.
+exports.cerrarPrestamosDiariosVencidos = onSchedule(
     {
       schedule: "5 0 * * *",
       timeZone: TIME_ZONE,

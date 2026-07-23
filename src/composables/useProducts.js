@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { db } from '../services/firebase'
+import { auth, db } from '../services/firebase'
 import {
   collection,
   addDoc,
@@ -123,6 +123,34 @@ const getTotalsFromStockPorArea = (stockPorArea = {}) => {
     return totals
   }, { stock: 0, stockEmpezado: 0 })
 }
+
+const buildStockMovementPayload = ({
+  productoId,
+  productoNombre,
+  areaOrigen,
+  field,
+  cantidad,
+  actor,
+  createdAt
+}) => ({
+  productoId,
+  productoNombre: String(productoNombre || '').trim() || null,
+  cantidad,
+  tipo: cantidad < 0 ? 'salida' : 'entrada',
+  motivo: field === 'stockEmpezado'
+    ? 'Edición de producto: ajuste de stock empezado'
+    : 'Edición de producto: ajuste de stock nuevo',
+  usuarioId: actor.uid,
+  usuarioNombre: actor.displayName || actor.email || 'Usuario',
+  createdBy: actor.uid,
+  areaOrigen,
+  trabajoId: null,
+  empresaTrabajo: null,
+  unidadTrabajo: null,
+  descripcionTrabajo: null,
+  tipoOperacion: 'AJUSTE_PRODUCTO',
+  createdAt
+})
 
 const normalizeProductData = (productData = {}, { partial = false } = {}) => {
   const payload = { ...productData }
@@ -431,9 +459,120 @@ export function useProducts() {
         validateProduct(normalizedUpdates)
       }
 
-      await updateDoc(doc(db, PRODUCTS_COLLECTION, id), {
-        ...normalizedUpdates,
-        updatedAt: new Date().toISOString()
+      if (options.partial === true) {
+        await updateDoc(doc(db, PRODUCTS_COLLECTION, id), {
+          ...normalizedUpdates,
+          updatedAt: new Date().toISOString()
+        })
+        return null
+      }
+
+      const stockBaseline = options.stockBaseline
+      if (!stockBaseline?.stockPorArea) {
+        throw new Error('La referencia inicial del stock no está disponible. Cierra y vuelve a abrir el producto.')
+      }
+
+      const actor = auth.currentUser
+      if (!actor?.uid) {
+        throw new Error('Tu sesión expiró. Inicia sesión nuevamente.')
+      }
+
+      const productRef = doc(db, PRODUCTS_COLLECTION, id)
+      return await runTransaction(db, async (transaction) => {
+        const snapshot = await transaction.get(productRef)
+        if (!snapshot.exists()) throw new Error('El producto ya no existe.')
+
+        const current = snapshot.data()
+        const baselineCategory = normalizeCategoriaControl(
+          stockBaseline.categoriaControl,
+          stockBaseline.tipo
+        )
+        const currentCategory = normalizeCategoriaControl(
+          current.categoriaControl,
+          current.tipo
+        )
+        const targetCategory = normalizeCategoriaControl(
+          normalizedUpdates.categoriaControl,
+          normalizedUpdates.tipo
+        )
+
+        if (currentCategory !== baselineCategory) {
+          throw new Error('La categoría del producto cambió en otro dispositivo. Cierra y vuelve a abrir el producto.')
+        }
+
+        const baselineStock = normalizeStockPorArea(stockBaseline, baselineCategory)
+        const currentStock = normalizeStockPorArea(current, currentCategory)
+        const requestedStock = normalizeStockPorArea(normalizedUpdates, targetCategory)
+        const mergedStock = emptyStockPorArea()
+        const stockChangedRemotely = AREAS_TALLER.some((area) => (
+          currentStock[area].stock !== baselineStock[area].stock ||
+          currentStock[area].stockEmpezado !== baselineStock[area].stockEmpezado
+        ))
+
+        if (targetCategory !== baselineCategory && stockChangedRemotely) {
+          throw new Error(
+            'El stock cambió en otro dispositivo mientras modificabas la categoría. Cierra y vuelve a abrir el producto.'
+          )
+        }
+
+        for (const area of AREAS_TALLER) {
+          const stockDelta = requestedStock[area].stock - baselineStock[area].stock
+          const startedDelta = requestedStock[area].stockEmpezado - baselineStock[area].stockEmpezado
+          const nextStock = currentStock[area].stock + stockDelta
+          const nextStarted = targetCategory === 'FRACCIONABLE'
+            ? currentStock[area].stockEmpezado + startedDelta
+            : 0
+
+          if (nextStock < 0 || nextStarted < 0) {
+            throw new Error(
+              `El stock de ${AREA_LABELS[area]} cambió en otro dispositivo y el ajuste dejaría una cantidad negativa.`
+            )
+          }
+
+          mergedStock[area] = {
+            stock: nextStock,
+            stockEmpezado: nextStarted
+          }
+        }
+
+        const totals = getTotalsFromStockPorArea(mergedStock)
+        const updatedAt = new Date().toISOString()
+        const productUpdate = {
+          ...normalizedUpdates,
+          categoriaControl: targetCategory,
+          tipo: targetCategory === 'HERRAMIENTA' ? 'HERRAMIENTA' : 'RECURSO',
+          unidadStock: getUnidadStock(targetCategory),
+          stockPorArea: mergedStock,
+          stock: totals.stock,
+          stockEmpezado: targetCategory === 'FRACCIONABLE' ? totals.stockEmpezado : 0,
+          updatedAt
+        }
+
+        transaction.update(productRef, productUpdate)
+
+        const productoNombre = productUpdate.nombre || current.nombre || ''
+        for (const area of AREAS_TALLER) {
+          for (const field of ['stock', 'stockEmpezado']) {
+            const cantidad = mergedStock[area][field] - currentStock[area][field]
+            if (cantidad === 0) continue
+
+            const movementRef = doc(collection(db, 'movimientos'))
+            transaction.set(movementRef, buildStockMovementPayload({
+              productoId: id,
+              productoNombre,
+              areaOrigen: area,
+              field,
+              cantidad,
+              actor,
+              createdAt: updatedAt
+            }))
+          }
+        }
+
+        return mapProductDoc({
+          id,
+          data: () => ({ ...current, ...productUpdate })
+        })
       })
     } catch (err) {
       error.value = mapProductsErrorMessage(err)

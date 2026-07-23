@@ -60,12 +60,22 @@
               <ion-icon slot="start" :icon="add"></ion-icon>
               Nuevo producto
             </ion-button>
-            <ion-button color="primary" fill="outline" class="hero-button" @click="openQuickStockScanner">
+            <ion-button
+              color="primary"
+              fill="outline"
+              class="hero-button"
+              :disabled="isQuickScannerBusy"
+              @click="openQuickStockScanner"
+            >
               <ion-icon slot="start" :icon="camera"></ion-icon>
-              Ajuste rápido
+              {{ isQuickScannerBusy ? 'Escaneando…' : 'Ajuste rápido' }}
             </ion-button>
           </div>
         </section>
+
+        <div v-if="quickScannerError" class="error-message quick-scanner-message">
+          {{ quickScannerError }}
+        </div>
 
         <section class="overview-grid" aria-label="Resumen de productos">
           <article class="overview-card overview-card--primary">
@@ -481,117 +491,6 @@
       @did-dismiss="showPrintToast = false"
     ></ion-toast>
 
-    <!-- Quick stock modal -->
-    <ion-modal :is-open="quickModalOpen" css-class="quick-stock-modal" @did-dismiss="() => { quickModalOpen = false }">
-      <ion-header>
-        <ion-toolbar color="primary">
-          <ion-title>Ajuste rápido</ion-title>
-          <ion-buttons slot="end">
-            <ion-button @click="quickModalOpen = false" class="close-modal-btn">
-              <ion-icon slot="start" :icon="closeOutline"></ion-icon>
-              Cerrar
-            </ion-button>
-          </ion-buttons>
-        </ion-toolbar>
-      </ion-header>
-      <ion-content class="modal-content">
-        <div class="modal-form quick-stock-form">
-          <div v-if="quickScannerError" class="error-message">{{ quickScannerError }}</div>
-
-          <div v-if="quickProduct" class="quick-panel">
-            <div class="quick-product-card">
-              <div>
-                <span class="eyebrow">Detectado</span>
-                <h3>{{ quickProduct.nombre }}</h3>
-                <p>Código: {{ quickProduct.codigoBarras || '-' }}</p>
-              </div>
-              <div class="product-chip-row compact-chip-row">
-                <span class="ui-chip ui-chip--muted">{{ getControlLabel(quickProduct) }}</span>
-                <span class="ui-chip ui-chip--muted">Mínimo: {{ getStockMinimo(quickProduct) }}</span>
-                <span class="ui-chip" :class="getStockStatusClass(quickProduct)">{{ getStockStatusLabel(quickProduct) }}</span>
-              </div>
-            </div>
-
-            <div class="stock-grid stock-grid--quick">
-              <div class="stock-metric stock-metric--main">
-                <span>Stock total</span>
-                <strong>{{ getTotalStock(quickProduct, quickArea) }}</strong>
-              </div>
-              <div v-if="quickProduct.categoriaControl !== 'FRACCIONABLE'" class="stock-metric">
-                <span>Disponible</span>
-                <strong>{{ getAvailableStock(quickProduct, quickArea) }}</strong>
-              </div>
-              <div class="stock-metric">
-                <span>Prestados</span>
-                <strong>{{ getLoanedStock(quickProduct.id, quickArea) }}</strong>
-              </div>
-              <div class="stock-metric">
-                <span>Mínimo</span>
-                <strong>{{ getStockMinimo(quickProduct) }}</strong>
-              </div>
-              <template v-if="quickProduct.categoriaControl === 'FRACCIONABLE'">
-                <div class="stock-metric">
-                  <span>Nuevos</span>
-                  <strong>{{ getStockNuevo(quickProduct, quickArea) }}</strong>
-                </div>
-                <div class="stock-metric">
-                  <span>Empezados</span>
-                  <strong>{{ getStockEmpezado(quickProduct, quickArea) }}</strong>
-                </div>
-              </template>
-            </div>
-
-            <div class="form-card modern-form-card">
-              <ion-item v-if="quickProduct.categoriaControl === 'FRACCIONABLE'" lines="full">
-                <ion-label position="stacked">Afectar stock</ion-label>
-                <ion-select v-model="quickStockTarget">
-                  <ion-select-option value="stock">Envases nuevos/completos</ion-select-option>
-                  <ion-select-option value="stockEmpezado">Empezados/sobrantes</ion-select-option>
-                </ion-select>
-              </ion-item>
-
-              <ion-item lines="full">
-                <ion-label>Tipo de ajuste</ion-label>
-                <ion-segment
-                  :value="quickAdjust"
-                  @ionChange="quickAdjust = $event.detail.value || 'add'"
-                >
-                  <ion-segment-button value="add">Entrada</ion-segment-button>
-                  <ion-segment-button value="subtract">Salida</ion-segment-button>
-                </ion-segment>
-              </ion-item>
-
-              <div class="field-stepper-card field-stepper-card--quick">
-                <span>Cantidad</span>
-                <div class="compact-stepper compact-stepper--quick">
-                  <ion-button fill="clear" class="stepper-btn" @click="changeQuickCantidad(-1)">
-                    <ion-icon slot="icon-only" :icon="remove"></ion-icon>
-                  </ion-button>
-                  <ion-input
-                    v-model.number="quickCantidad"
-                    type="text"
-                    inputmode="numeric"
-                    pattern="[0-9]*"
-                    class="stepper-input"
-                    aria-label="Cantidad del ajuste de stock"
-                    @ionBlur="normalizeQuickCantidad"
-                  ></ion-input>
-                  <ion-button fill="clear" class="stepper-btn" @click="changeQuickCantidad(1)">
-                    <ion-icon slot="icon-only" :icon="add"></ion-icon>
-                  </ion-button>
-                </div>
-              </div>
-            </div>
-
-            <ion-button expand="block" class="primary-action" @click="applyQuickStockAdjustment">Confirmar ajuste</ion-button>
-          </div>
-
-          <div v-else class="empty-state modern-state">
-            <p>Escanea un código para seleccionar un producto.</p>
-          </div>
-        </div>
-      </ion-content>
-    </ion-modal>
   </ion-page>
   </template>
 
@@ -605,9 +504,7 @@ import { Directory, Filesystem } from '@capacitor/filesystem'
 import { Share } from '@capacitor/share'
 import JsBarcode from 'jsbarcode'
 import { useProducts } from '../composables/useProducts'
-import { useMovimientos } from '../composables/useMovimientos'
 import { usePrestamos } from '../composables/usePrestamos'
-import { auth } from '../services/firebase'
 import {
   IonPage,
   IonHeader,
@@ -647,11 +544,9 @@ const {
   error,
   createProduct,
   getProducts,
-  adjustProductStock,
   updateProduct,
   deleteProduct: deleteProductAPI
 } = useProducts()
-const { logMovimiento } = useMovimientos()
 const { getPrestamos } = usePrestamos()
 
 const searchTerm = ref('')
@@ -661,6 +556,7 @@ const isModulesMenuOpen = ref(false)
 const isModalOpen = ref(false)
 const isEditing = ref(false)
 const currentProductId = ref(null)
+const productEditBaseline = ref(null)
 const isScanning = ref(false)
 const isModalScannerBusy = ref(false)
 const barcodeError = ref('')
@@ -791,6 +687,7 @@ const resetForm = () => {
     precio: null,
     codigoBarras: ''
   }
+  productEditBaseline.value = null
 }
 
 const setTouched = (field) => {
@@ -825,15 +722,6 @@ const normalizeStockMinimo = () => {
 const changeStockMinimo = (delta) => {
   formData.value.stockMinimo = Number(formData.value.stockMinimo || 0) + Number(delta || 0)
   normalizeStockMinimo()
-}
-
-const normalizeQuickCantidad = () => {
-  quickCantidad.value = normalizeIntegerValue(quickCantidad.value, 1)
-}
-
-const changeQuickCantidad = (delta) => {
-  quickCantidad.value = Number(quickCantidad.value || 0) + Number(delta || 0)
-  normalizeQuickCantidad()
 }
 
 const nombreError = computed(() => {
@@ -1187,6 +1075,15 @@ const openEditProductModal = (product) => {
   isEditing.value = true
   currentProductId.value = product.id
   printError.value = ''
+  const stockPorArea = normalizeStockPorAreaLocal(product)
+  productEditBaseline.value = {
+    categoriaControl: product.categoriaControl || 'UNIDAD',
+    tipo: product.tipo,
+    stockPorArea: AREAS_TALLER.reduce((result, area) => {
+      result[area] = { ...stockPorArea[area] }
+      return result
+    }, {})
+  }
   formData.value = {
     nombre: product.nombre,
     descripcion: product.descripcion || '',
@@ -1194,7 +1091,7 @@ const openEditProductModal = (product) => {
     stockMinimo: normalizeIntegerValue(product.stockMinimo, 0),
     stock: Number.isFinite(Number(product.stock)) ? Number(product.stock) : 0,
     stockEmpezado: Number.isFinite(Number(product.stockEmpezado)) ? Number(product.stockEmpezado) : 0,
-    stockPorArea: normalizeStockPorAreaLocal(product),
+    stockPorArea,
     precio: product.precio || null,
     codigoBarras: product.codigoBarras || ''
   }
@@ -1581,13 +1478,6 @@ const resetPageUiState = () => {
 const isQuickScannerBusy = ref(false)
 const isQuickScannerInstalling = ref(false)
 const quickScannerError = ref('')
-const quickModalOpen = ref(false)
-const quickProduct = ref(null)
-const quickAdjust = ref('add') // 'add' or 'subtract'
-const quickCantidad = ref(1)
-const quickStockTarget = ref('stock')
-const quickArea = ref('OFICINA')
-
 const SCANNER_TIMEOUT_MS = 15000
 const DEBOUNCE_DELAY_MS = 800
 const MODULE_INSTALL_TIMEOUT_MS = 20000
@@ -1632,12 +1522,7 @@ const handleQuickScannedBarcode = async (decodedText) => {
     return
   }
 
-  quickProduct.value = found
-  quickCantidad.value = 1
-  quickAdjust.value = 'add'
-  quickStockTarget.value = 'stock'
-  quickArea.value = areaFilter.value === 'TODAS' ? 'OFICINA' : normalizeAreaKey(areaFilter.value)
-  quickModalOpen.value = true
+  openEditProductModal(found)
 }
 
 const openQuickStockScanner = async () => {
@@ -1714,56 +1599,6 @@ const openQuickStockScanner = async () => {
   }
 }
 
-const applyQuickStockAdjustment = async () => {
-  quickScannerError.value = ''
-  if (!quickProduct.value) return
-  const cantidad = Number(quickCantidad.value)
-  if (!Number.isInteger(cantidad) || cantidad <= 0) {
-    quickScannerError.value = 'La cantidad debe ser un entero mayor a 0.'
-    return
-  }
-
-  const isFraccionable = quickProduct.value.categoriaControl === 'FRACCIONABLE'
-  const target = isFraccionable ? quickStockTarget.value : 'stock'
-  const area = normalizeAreaKey(quickArea.value)
-  const delta = quickAdjust.value === 'add' ? cantidad : -cantidad
-
-  try {
-    const adjustedProduct = await adjustProductStock(quickProduct.value.id, {
-      area,
-      stockDelta: target === 'stock' ? delta : 0,
-      stockEmpezadoDelta: target === 'stockEmpezado' ? delta : 0
-    })
-    const next = Number(adjustedProduct.stockPorArea?.[area]?.[target] || 0)
-    try {
-      const usuario = auth.currentUser
-      if (!usuario?.uid) throw new Error('Tu sesión expiró. Inicia sesión nuevamente.')
-      await logMovimiento({
-        productoId: quickProduct.value.id,
-        productoNombre: quickProduct.value.nombre,
-        cantidad: quickAdjust.value === 'add' ? cantidad : -cantidad,
-        tipo: quickAdjust.value === 'add' ? 'entrada' : 'salida',
-        motivo: target === 'stockEmpezado' ? 'Ajuste rapido de stock empezado' : 'Ajuste rapido de stock nuevo',
-        areaOrigen: area,
-        usuarioId: usuario.uid,
-        usuarioNombre: usuario.displayName || usuario.email || 'Usuario'
-      })
-    } catch (mErr) {
-      console.warn('No se pudo registrar movimiento:', mErr)
-    }
-    quickModalOpen.value = false
-    quickProduct.value = null
-    await showSaveToastFn(`${target === 'stockEmpezado' ? 'Stock empezado' : 'Stock'} actualizado: ${next}`)
-  } catch (err) {
-    quickScannerError.value = err?.message || 'No se pudo actualizar el stock.'
-  }
-}
-
-const showSaveToastFn = async (message) => {
-  toastMessage.value = message
-  showSaveToast.value = true
-}
-
 const normalizeProductPayload = () => {
   const nombre = formData.value.nombre?.trim() || ''
   const descripcion = formData.value.descripcion?.trim() || ''
@@ -1819,7 +1654,9 @@ const saveProduct = async () => {
     const payload = normalizeProductPayload()
 
     if (isEditing.value) {
-      await updateProduct(currentProductId.value, payload)
+      await updateProduct(currentProductId.value, payload, {
+        stockBaseline: productEditBaseline.value
+      })
     } else {
       await createProduct(payload)
     }
@@ -1834,7 +1671,7 @@ const saveProduct = async () => {
     await refreshProductsAndLoanedStock()
     closeModal()
   } catch (err) {
-    modalError.value = 'No se pudo guardar el producto. Intenta de nuevo.'
+    modalError.value = err?.message || 'No se pudo guardar el producto. Intenta de nuevo.'
     console.error('Error guardando producto:', err)
   }
 }

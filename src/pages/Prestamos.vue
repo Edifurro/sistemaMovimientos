@@ -813,7 +813,6 @@
                                   inputmode="numeric"
                                   pattern="[0-9]*"
                                   class="cart-quantity-input release-quantity-input"
-                                  :legacy="true"
                                   @ionBlur="normalizeLiberationField(item, 'cantidadDevuelta')"
                                 ></ion-input>
                                 <ion-button fill="clear" class="stepper-btn release-stepper-btn" @click="changeLiberationQuantity(item, 'cantidadDevuelta', 1)">
@@ -821,10 +820,17 @@
                                 </ion-button>
                               </div>
                             </div>
-                            <ion-item lines="none" class="release-comment-input">
-                              <ion-label position="stacked"><strong>Comentario</strong> <span>(opcional)</span></ion-label>
-                              <ion-textarea v-model="liberationItems[getDetailKey(item)].comentarioDevuelto" rows="3" placeholder="Agrega una nota sobre la devolución" :legacy="true"></ion-textarea>
-                            </ion-item>
+                            <div class="release-comment-field">
+                              <label><strong>Comentarios</strong> <span>(opcional)</span></label>
+                              <ion-textarea
+                                v-model="liberationItems[getDetailKey(item)].comentarioDevuelto"
+                                class="release-comment-textarea"
+                                rows="2"
+                                aria-label="Comentario de devolución"
+                                placeholder="Agrega una nota sobre la devolución"
+                                :legacy="true"  
+                              ></ion-textarea>
+                            </div>
                           </div>
                         </article>
 
@@ -849,7 +855,6 @@
                                   inputmode="numeric"
                                   pattern="[0-9]*"
                                   class="cart-quantity-input release-quantity-input"
-                                  :legacy="true"
                                   @ionBlur="normalizeLiberationField(item, 'cantidadDevueltaComoEmpezado')"
                                 ></ion-input>
                                 <ion-button fill="clear" class="stepper-btn release-stepper-btn" @click="changeLiberationQuantity(item, 'cantidadDevueltaComoEmpezado', 1)">
@@ -857,10 +862,17 @@
                                 </ion-button>
                               </div>
                             </div>
-                            <ion-item lines="none" class="release-comment-input">
-                              <ion-label position="stacked"><strong>Comentario</strong> <span class="required-mark">*</span></ion-label>
-                              <ion-textarea v-model="liberationItems[getDetailKey(item)].comentarioDevueltoComoEmpezado" rows="3" placeholder="Describe el estado del envase abierto" :legacy="true"></ion-textarea>
-                            </ion-item>
+                            <div class="release-comment-field">
+                              <label><strong>Comentarios</strong> <span>(opcional)</span></label>
+                              <ion-textarea
+                                v-model="liberationItems[getDetailKey(item)].comentarioDevueltoComoEmpezado"
+                                class="release-comment-textarea"
+                                rows="2"
+                                aria-label="Comentarios"
+                                placeholder="Describe el estado del producto"
+                                :legacy="true"
+                              ></ion-textarea>
+                            </div>
                           </div>
                         </article>
 
@@ -885,7 +897,6 @@
                                   inputmode="numeric"
                                   pattern="[0-9]*"
                                   class="cart-quantity-input release-quantity-input"
-                                  :legacy="true"
                                   @ionBlur="normalizeLiberationField(item, 'cantidadConsumida')"
                                 ></ion-input>
                                 <ion-button fill="clear" class="stepper-btn release-stepper-btn" @click="changeLiberationQuantity(item, 'cantidadConsumida', 1)">
@@ -893,10 +904,17 @@
                                 </ion-button>
                               </div>
                             </div>
-                            <ion-item lines="none" class="release-comment-input">
-                              <ion-label position="stacked"><strong>Comentario</strong> <span class="required-mark">*</span></ion-label>
-                              <ion-textarea v-model="liberationItems[getDetailKey(item)].comentarioConsumo" rows="3" placeholder="Indica cómo se utilizó el producto" :legacy="true"></ion-textarea>
-                            </ion-item>
+                            <div class="release-comment-field">
+                              <label><strong>Comentarios</strong> <span>(opcional)</span></label>
+                              <ion-textarea
+                                v-model="liberationItems[getDetailKey(item)].comentarioConsumo"
+                                class="release-comment-textarea"
+                                rows="2"
+                                aria-label="Comentario de consumo"
+                                placeholder="Indica cómo se utilizó el producto"
+                                :legacy="true"
+                              ></ion-textarea>
+                            </div>
                           </div>
                         </article>
                       </div>
@@ -8862,7 +8880,7 @@ ion-button {
 
 .return-disposition-heading {
   min-height: 100%;
-  padding: 0.95rem;
+  padding: 0.8rem;
   border-right: 1px solid currentColor;
   display: flex;
   align-items: flex-start;
@@ -8891,14 +8909,15 @@ ion-button {
 
 .return-disposition-heading h4 {
   color: inherit !important;
-  font-size: 0.9rem !important;
+  font-size: 0.82rem !important;
+  line-height: 1.2 !important;
   font-weight: 900 !important;
 }
 
 .return-disposition-heading p {
   color: #475569 !important;
-  font-size: 0.74rem !important;
-  line-height: 1.35 !important;
+  font-size: 0.67rem !important;
+  line-height: 1.3 !important;
 }
 
 .return-disposition-heading p strong,
@@ -8909,7 +8928,8 @@ ion-button {
 
 .return-count-chip {
   flex: 0 0 auto;
-  min-width: 30px;
+  min-width: 28px;
+  font-size: 0.68rem;
   font-weight: 900;
 }
 
@@ -8935,105 +8955,222 @@ ion-button {
   display: grid !important;
   grid-template-columns: minmax(205px, 0.8fr) minmax(260px, 1.2fr) !important;
   align-items: stretch !important;
-  gap: 0.8rem !important;
-  padding: 0.8rem !important;
+  gap: 0.65rem !important;
+  padding: 0.65rem !important;
   border-top: 0 !important;
 }
 
 .return-disposition-card .release-quantity-row {
   display: grid !important;
-  grid-template-columns: 72px minmax(0, 1fr) !important;
+  grid-template-columns: 68px minmax(0, 1fr) !important;
   align-items: center !important;
   gap: 0.6rem !important;
-  min-height: 92px !important;
-  padding: 0.75rem !important;
+  min-height: 78px !important;
+  padding: 0.6rem !important;
   margin: 0 !important;
 }
 
 .return-disposition-card .release-quantity-row > strong {
   color: #334155;
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   font-weight: 900;
 }
 
 .return-disposition-card .release-stepper.cart-stepper {
   display: grid !important;
-  grid-template-columns: 40px 58px 40px !important;
+  grid-template-columns: 38px 54px 38px !important;
+  align-items: center !important;
+  justify-items: center !important;
   justify-content: end !important;
   justify-self: stretch !important;
   gap: 0.3rem !important;
   width: 100% !important;
   min-width: 0 !important;
-  height: 44px !important;
+  height: 38px !important;
+  min-height: 38px !important;
+  max-height: 38px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
 }
 
 .return-disposition-card .release-stepper-btn,
 .return-disposition-card .release-stepper-btn::part(native) {
-  width: 40px !important;
-  height: 40px !important;
-  min-width: 40px !important;
-  min-height: 40px !important;
-  max-width: 40px !important;
-  max-height: 40px !important;
+  width: 38px !important;
+  height: 38px !important;
+  min-width: 38px !important;
+  min-height: 38px !important;
+  max-width: 38px !important;
+  max-height: 38px !important;
 }
 
 .return-disposition-card .release-stepper-btn ion-icon {
-  width: 18px !important;
-  height: 18px !important;
-  font-size: 18px !important;
+  width: 16px !important;
+  height: 16px !important;
+  font-size: 16px !important;
 }
 
 .return-disposition-card .release-quantity-input {
-  width: 58px !important;
-  min-width: 58px !important;
-  max-width: 58px !important;
-  height: 44px !important;
-  min-height: 44px !important;
-  max-height: 44px !important;
+  --min-height: 38px !important;
+  --padding-start: 0 !important;
+  --padding-end: 0 !important;
+  --padding-top: 0 !important;
+  --padding-bottom: 0 !important;
+  --background: #ffffff !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 54px !important;
+  min-width: 54px !important;
+  max-width: 54px !important;
+  height: 38px !important;
+  min-height: 38px !important;
+  max-height: 38px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 1px solid #dbe3ee !important;
+  border-radius: 9px !important;
+  box-sizing: border-box !important;
+  position: relative !important;
+  align-self: center !important;
+  justify-self: center !important;
+  overflow: hidden !important;
+  transform: none !important;
 }
 
 .return-disposition-card .release-quantity-input::part(native) {
-  font-size: 1rem !important;
-  line-height: 44px !important;
-}
-
-.return-disposition-card .release-comment-input {
-  min-height: 92px !important;
+  position: static !important;
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  max-height: 36px !important;
   margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  box-sizing: border-box !important;
+  background: transparent !important;
+  font-size: 0.9rem !important;
+  line-height: 36px !important;
+  text-align: center !important;
+  vertical-align: middle !important;
+  transform: none !important;
+  appearance: none !important;
 }
 
-.return-disposition-card .release-comment-input::part(native) {
-  min-height: 92px !important;
-  padding: 0.7rem 0.75rem !important;
+/* IonInput legacy renderiza el input real en el DOM interno y no siempre expone ::part(native). */
+.return-disposition-card .release-quantity-input :deep(input.native-input) {
+  position: absolute !important;
+  inset: 0 !important;
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  max-height: 36px !important;
+  margin: auto !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  box-sizing: border-box !important;
+  background: transparent !important;
+  color: inherit !important;
+  font: inherit !important;
+  font-size: 0.9rem !important;
+  font-weight: 900 !important;
+  line-height: 36px !important;
+  text-align: center !important;
+  vertical-align: middle !important;
+  transform: none !important;
+  appearance: none !important;
 }
 
-.return-disposition-card .release-comment-input ion-label {
-  margin-bottom: 0.25rem !important;
-  color: #334155 !important;
-  font-size: 0.72rem !important;
-  line-height: 1.2 !important;
+.return-disposition-card .release-comment-field {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-self: stretch;
+  gap: 0.12rem;
+  width: 100%;
+  height: 78px;
+  min-height: 78px;
+  max-height: 78px;
+  margin: 0;
+  padding: 0.48rem 0.62rem;
+  border: 1px solid #e4ebf5;
+  border-radius: 12px;
+  background: #f8fafc;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
-.return-disposition-card .release-comment-input ion-label strong {
+.return-disposition-card .release-comment-field label {
+  display: block;
+  margin: 0;
+  color: #334155;
+  font-size: 0.66rem;
+  line-height: 1.2;
+  white-space: normal;
+}
+
+.return-disposition-card .release-comment-field label strong {
   font-weight: 900;
 }
 
-.return-disposition-card .release-comment-input ion-label span {
+.return-disposition-card .release-comment-field label span {
   color: #64748b;
   font-weight: 650;
 }
 
-.return-disposition-card .release-comment-input ion-label .required-mark {
+.return-disposition-card .release-comment-field label .required-mark {
   color: #dc2626;
   font-weight: 900;
 }
 
-.return-disposition-card .release-comment-input ion-textarea {
-  min-height: 58px !important;
-  font-size: 0.8rem !important;
-  line-height: 1.35 !important;
-  --padding-top: 0.28rem !important;
-  --padding-bottom: 0.15rem !important;
+.return-disposition-card .release-comment-textarea {
+  --background: transparent !important;
+  --padding-start: 0 !important;
+  --padding-end: 0 !important;
+  --padding-top: 0.16rem !important;
+  --padding-bottom: 0 !important;
+  display: block !important;
+  width: 100% !important;
+  height: 44px !important;
+  min-height: 44px !important;
+  max-height: 44px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  font-size: 0.73rem !important;
+  line-height: 1.3 !important;
+  box-sizing: border-box !important;
+  align-self: end !important;
+  overflow: hidden !important;
+}
+
+.return-disposition-card .release-comment-textarea::part(native) {
+  width: 100% !important;
+  height: 44px !important;
+  min-height: 44px !important;
+  max-height: 44px !important;
+  margin: 0 !important;
+  padding: 0.16rem 0 0 !important;
+  border: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.review-direct-heading .eyebrow {
+  font-size: 0.58rem;
+}
+
+.review-direct-heading h4 {
+  font-size: 0.86rem;
+}
+
+.review-direct-heading p {
+  font-size: 0.68rem;
 }
 
 .closing-ready-copy {
@@ -9092,12 +9229,13 @@ ion-button {
   }
 
   .return-disposition-card .release-quantity-row {
-    min-height: 76px !important;
+    min-height: 70px !important;
   }
 
-  .return-disposition-card .release-comment-input,
-  .return-disposition-card .release-comment-input::part(native) {
-    min-height: 104px !important;
+  .return-disposition-card .release-comment-field {
+    height: 78px;
+    min-height: 78px;
+    max-height: 78px;
   }
 }
 
