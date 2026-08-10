@@ -70,7 +70,8 @@ const calcularPendienteDetalle = (item = {}) => {
   const resuelto = Number(item.cantidadDevuelta || 0) +
     Number(item.cantidadConsumida || 0) +
     Number(item.cantidadDevueltaComoEmpezado || 0) +
-    Number(item.cantidadAdeudada || 0);
+    Number(item.cantidadAdeudada || 0) +
+    Number(item.cantidadAdeudoResueltaSinStock || 0);
   return Math.max(0, total - resuelto);
 };
 
@@ -90,6 +91,9 @@ const normalizeDetalle = (item = {}) => {
         item.cantidadDevueltaComoEmpezado,
     ),
     cantidadAdeudada: toNonNegativeInt(item.cantidadAdeudada),
+    cantidadAdeudoResueltaSinStock: toNonNegativeInt(
+        item.cantidadAdeudoResueltaSinStock,
+    ),
   };
 };
 

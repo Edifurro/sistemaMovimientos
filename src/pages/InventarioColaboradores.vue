@@ -279,7 +279,17 @@
               @click="shareLabelToPrinterApp"
             >
               <ion-icon slot="start" :icon="print"></ion-icon>
-              {{ isPrinting ? 'Generando etiqueta...' : 'Imprimir etiqueta' }}
+              {{ isPrinting ? 'Imprimiendo...' : 'Imprimir etiqueta' }}
+            </ion-button>
+            <ion-button
+              v-if="isEditing && isNativePlatform"
+              expand="block"
+              fill="clear"
+              size="small"
+              :disabled="isPrinting"
+              @click="resetTsplPrinter"
+            >
+              Cambiar impresora Bluetooth
             </ion-button>
             <p v-if="printError" class="field-error">{{ printError }}</p>
           </div>
@@ -448,6 +458,7 @@ import { useColaboradores } from '../composables/useColaboradores'
 import { useConteoColaborador } from '../composables/useConteoColaborador'
 import { useAuth } from '../composables/useAuth'
 import { useInventarioColaboradores } from '../composables/useInventarioColaboradores'
+import { useTsplPrinter } from '../composables/useTsplPrinter'
 import {
   buildInventarioColaboradoresWorkbook,
   parseInventarioColaboradoresWorkbook,
@@ -508,6 +519,8 @@ const {
 
 const { startConteo } = useConteoColaborador()
 const { usuario } = useAuth()
+const { printBarcodeLabel, forgetPrinter } = useTsplPrinter()
+const isNativePlatform = Capacitor?.isNativePlatform?.() === true
 
 const searchText = ref('')
 const estadoFilter = ref('todos')
@@ -671,9 +684,9 @@ const notifyPrintResult = async (message, color = 'success') => {
   await showFeedback(message, color)
 }
 
-const LABEL_WIDTH_MM = 52
+const LABEL_WIDTH_MM = 51
 const LABEL_HEIGHT_MM = 25
-const LABEL_WIDTH_PX = 416
+const LABEL_WIDTH_PX = 408
 const LABEL_HEIGHT_PX = 200
 const LABEL_RENDER_SCALE = 2
 
@@ -975,7 +988,7 @@ const buildLabelPngFileUri = async (code) => {
   const pngBase64 = pngDataUrl.split(',')[1]
   if (!pngBase64) throw new Error('No se pudo generar la imagen de impresión.')
 
-  const fileName = `etiqueta-${safeLabelFileName(code)}-52x25.png`
+  const fileName = `etiqueta-${safeLabelFileName(code)}-51x25.png`
   const result = await Filesystem.writeFile({
     path: fileName,
     data: pngBase64,
@@ -1015,17 +1028,11 @@ const shareLabelToPrinterApp = async () => {
 
   try {
     isPrinting.value = true
-    const fileUri = await buildLabelPngFileUri(barcode)
-    await Share.share({
-      title: 'Etiqueta de inventario',
-      text: barcode,
-      files: [fileUri],
-      dialogTitle: 'Compartir imagen de etiqueta con app de impresión'
-    })
+    const printer = await printBarcodeLabel(barcode)
 
-    await showFeedback(`Etiqueta lista para imprimir - ${barcode}`, 'success')
+    await showFeedback(`Etiqueta impresa en ${printer?.name || 'impresora TSPL'} - ${barcode}`, 'success')
   } catch (err) {
-    const errorMsg = err?.message || 'No se pudo generar la etiqueta.'
+    const errorMsg = err?.message || 'No se pudo imprimir la etiqueta por Bluetooth.'
     if (!errorMsg.includes('cancel') && !errorMsg.includes('dismiss')) {
       printError.value = errorMsg
       await showFeedback(errorMsg, 'danger')
@@ -1033,6 +1040,12 @@ const shareLabelToPrinterApp = async () => {
   } finally {
     isPrinting.value = false
   }
+}
+
+const resetTsplPrinter = async () => {
+  await forgetPrinter()
+  printError.value = ''
+  await showFeedback('Impresora eliminada. La próxima impresión permitirá seleccionar otra.', 'success')
 }
 
 const getEstadoClass = (estado) => {
@@ -2350,4 +2363,3 @@ ion-button,
   }
 }
 </style>
-

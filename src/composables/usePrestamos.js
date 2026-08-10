@@ -150,7 +150,8 @@ const calcularPendienteDetalle = (item) => {
   const consumido = Number(item.cantidadConsumida || 0)
   const devueltoComoEmpezado = Number(item.cantidadDevueltaComoEmpezado || 0)
   const adeudado = Number(item.cantidadAdeudada || 0)
-  return Math.max(0, total - devuelto - consumido - devueltoComoEmpezado - adeudado)
+  const adeudoResueltoSinStock = Number(item.cantidadAdeudoResueltaSinStock || 0)
+  return Math.max(0, total - devuelto - consumido - devueltoComoEmpezado - adeudado - adeudoResueltoSinStock)
 }
 
 const buildObservationEntry = (observacion = '', usuarioNombre = 'Usuario', nowIso = new Date().toISOString()) => {
@@ -216,6 +217,7 @@ const normalizeDetalleEntrada = (item, productoData = {}) => {
     cantidadConsumida: toNonNegativeInt(item.cantidadConsumida),
     cantidadDevueltaComoEmpezado: toNonNegativeInt(item.cantidadDevueltaComoEmpezado),
     cantidadAdeudada: toNonNegativeInt(item.cantidadAdeudada),
+    cantidadAdeudoResueltaSinStock: toNonNegativeInt(item.cantidadAdeudoResueltaSinStock),
     observacion: String(item.observacion || item.observacionEntrega || '').trim()
   }
 }
@@ -237,6 +239,7 @@ const normalizeExistingDetalle = (item = {}) => {
     cantidadConsumida: toNonNegativeInt(item.cantidadConsumida),
     cantidadDevueltaComoEmpezado: toNonNegativeInt(item.cantidadDevueltaComoEmpezado),
     cantidadAdeudada: toNonNegativeInt(item.cantidadAdeudada),
+    cantidadAdeudoResueltaSinStock: toNonNegativeInt(item.cantidadAdeudoResueltaSinStock),
     observacion: String(item.observacion || '').trim()
   }
 }
@@ -256,6 +259,7 @@ const mergeDetalle = (existing, addition) => ({
   cantidadConsumida: Number(existing.cantidadConsumida || 0),
   cantidadDevueltaComoEmpezado: Number(existing.cantidadDevueltaComoEmpezado || 0),
   cantidadAdeudada: Number(existing.cantidadAdeudada || 0),
+  cantidadAdeudoResueltaSinStock: Number(existing.cantidadAdeudoResueltaSinStock || 0),
   observacion: [existing.observacion, addition.observacion].filter(Boolean).join('\n')
 })
 

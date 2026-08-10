@@ -16,6 +16,7 @@ import {
 
 const ADEUDOS_COLLECTION = 'adeudosProductos'
 const PRODUCTS_COLLECTION = 'productos_nuevos'
+const PRESTAMOS_COLLECTION = 'prestamos'
 
 const adeudosProductos = ref([])
 const loading = ref(false)
@@ -76,6 +77,72 @@ const getTotalsFromStockPorArea = (stockPorArea = {}) => AREAS_TALLER.reduce((to
   totals.stockEmpezado += toNonNegativeInteger(stockPorArea?.[area]?.stockEmpezado)
   return totals
 }, { stock: 0, stockEmpezado: 0 })
+
+const syncPrestamoDebtDetail = (
+  prestamo = {},
+  adeudo = {},
+  cantidadPendiente = 0,
+  accionResolucion = 'SIN_MOVIMIENTO_STOCK'
+) => {
+  const targetProductId = String(adeudo.productoId || '').trim()
+  const targetArea = normalizeArea(adeudo.areaOrigen)
+  let pendientePorAsignar = toNonNegativeInteger(cantidadPendiente)
+  let matched = false
+
+  const detalles = (prestamo.detalles || []).map((item) => {
+    if (
+      String(item.productoId || '').trim() !== targetProductId ||
+      normalizeArea(item.areaOrigen) !== targetArea
+    ) {
+      return item
+    }
+
+    matched = true
+    const cantidad = toNonNegativeInteger(item.cantidad)
+    const resueltoSinAdeudo =
+      toNonNegativeInteger(item.cantidadDevuelta) +
+      toNonNegativeInteger(item.cantidadConsumida) +
+      toNonNegativeInteger(item.cantidadDevueltaComoEmpezado) +
+      toNonNegativeInteger(item.cantidadAdeudoResueltaSinStock)
+    const capacidadAdeudo = Math.max(0, cantidad - resueltoSinAdeudo)
+    const cantidadAdeudada = Math.min(capacidadAdeudo, pendientePorAsignar)
+    pendientePorAsignar -= cantidadAdeudada
+
+    const deudaAnterior = toNonNegativeInteger(item.cantidadAdeudada)
+    const cantidadResuelta = Math.max(0, deudaAnterior - cantidadAdeudada)
+    const detalleActualizado = {
+      ...item,
+      cantidadAdeudada
+    }
+
+    if (cantidadResuelta > 0) {
+      if (accionResolucion === 'REINGRESAR_STOCK') {
+        detalleActualizado.cantidadDevuelta = toNonNegativeInteger(item.cantidadDevuelta) + cantidadResuelta
+      } else if (accionResolucion === 'REINGRESAR_STOCK_EMPEZADO') {
+        detalleActualizado.cantidadDevueltaComoEmpezado = toNonNegativeInteger(item.cantidadDevueltaComoEmpezado) + cantidadResuelta
+      } else {
+        detalleActualizado.cantidadAdeudoResueltaSinStock =
+          toNonNegativeInteger(item.cantidadAdeudoResueltaSinStock) + cantidadResuelta
+      }
+    }
+
+    return detalleActualizado
+  })
+
+  if (!matched) {
+    throw new Error('El producto del adeudo no coincide con el préstamo de origen.')
+  }
+  if (pendientePorAsignar > 0) {
+    throw new Error('El adeudo pendiente no coincide con las cantidades del préstamo de origen.')
+  }
+
+  const totalAdeudado = detalles.reduce(
+    (sum, item) => sum + toNonNegativeInteger(item.cantidadAdeudada),
+    0
+  )
+
+  return { detalles, totalAdeudado }
+}
 
 const toIsoDate = (value) => value?.toDate ? value.toDate().toISOString() : value
 const mapDoc = (document) => {
@@ -204,16 +271,31 @@ export function useAdeudosProductos() {
         const saldadaActual = Number(adeudo.cantidadSaldada || 0)
         if (cantidad > pendienteActual) throw new Error('No puedes saldar mas de lo pendiente.')
 
+        const nuevaSaldada = saldadaActual + cantidad
+        const nuevaPendiente = Math.max(0, pendienteActual - cantidad)
+        const prestamoRef = adeudo.prestamoId
+          ? doc(db, PRESTAMOS_COLLECTION, adeudo.prestamoId)
+          : null
+        const prestamoSnap = prestamoRef ? await transaction.get(prestamoRef) : null
+        if (prestamoRef && !prestamoSnap?.exists()) {
+          throw new Error('El préstamo de origen del adeudo ya no existe.')
+        }
+
+        let productoRef = null
+        let producto = null
+
         if (accionInventario === 'REINGRESAR_STOCK' || accionInventario === 'REINGRESAR_STOCK_EMPEZADO') {
-          const productoRef = doc(db, PRODUCTS_COLLECTION, adeudo.productoId)
+          productoRef = doc(db, PRODUCTS_COLLECTION, adeudo.productoId)
           const productoSnap = await transaction.get(productoRef)
           if (!productoSnap.exists()) throw new Error('Producto del adeudo no encontrado.')
-          const producto = productoSnap.data()
+          producto = productoSnap.data()
 
           if (accionInventario === 'REINGRESAR_STOCK_EMPEZADO' && producto.categoriaControl !== 'FRACCIONABLE') {
             throw new Error('Solo productos fraccionables pueden reingresar como empezados.')
           }
+        }
 
+        if (productoRef && producto) {
           const areaOrigen = normalizeArea(adeudo.areaOrigen)
           const stockPorArea = normalizeStockPorArea(producto)
           stockPorArea[areaOrigen] = stockPorArea[areaOrigen] || { stock: 0, stockEmpezado: 0 }
@@ -231,8 +313,39 @@ export function useAdeudosProductos() {
           })
         }
 
-        const nuevaSaldada = saldadaActual + cantidad
-        const nuevaPendiente = Math.max(0, pendienteActual - cantidad)
+        if (prestamoRef && prestamoSnap?.exists()) {
+          const prestamo = prestamoSnap.data()
+          const { detalles, totalAdeudado } = syncPrestamoDebtDetail(
+            prestamo,
+            adeudo,
+            nuevaPendiente,
+            accionInventario
+          )
+          transaction.update(prestamoRef, {
+            detalles,
+            estado: totalAdeudado > 0 ? 'cerrado_con_adeudo' : 'cerrado',
+            historialAdeudos: [
+              ...(prestamo.historialAdeudos || []),
+              {
+                tipo: 'saldo',
+                adeudoId,
+                productoId: adeudo.productoId,
+                productoNombre: adeudo.productoNombre || '',
+                areaOrigen: normalizeArea(adeudo.areaOrigen),
+                cantidad,
+                cantidadPendiente: nuevaPendiente,
+                usuarioId: actor.id,
+                usuarioNombre: actor.nombre,
+                fecha: nowIso
+              }
+            ],
+            adeudosSaldadosAt: totalAdeudado <= 0 ? serverTimestamp() : (prestamo.adeudosSaldadosAt || null),
+            updatedBy: actor.id,
+            updatedByName: actor.nombre,
+            updatedAt: serverTimestamp()
+          })
+        }
+
         transaction.update(adeudoRef, {
           cantidadSaldada: nuevaSaldada,
           cantidadPendiente: nuevaPendiente,
@@ -283,7 +396,51 @@ export function useAdeudosProductos() {
         if (!adeudoSnap.exists()) throw new Error('Adeudo no encontrado.')
         const adeudo = adeudoSnap.data()
         if (adeudo.estado !== 'pendiente') throw new Error('Este adeudo ya no esta pendiente.')
+
+        const prestamoRef = adeudo.prestamoId
+          ? doc(db, PRESTAMOS_COLLECTION, adeudo.prestamoId)
+          : null
+        const prestamoSnap = prestamoRef ? await transaction.get(prestamoRef) : null
+        if (prestamoRef && !prestamoSnap?.exists()) {
+          throw new Error('El préstamo de origen del adeudo ya no existe.')
+        }
+
+        if (prestamoRef && prestamoSnap?.exists()) {
+          const prestamo = prestamoSnap.data()
+          const { detalles, totalAdeudado } = syncPrestamoDebtDetail(
+            prestamo,
+            adeudo,
+            0,
+            'CANCELAR_ADEUDO'
+          )
+          transaction.update(prestamoRef, {
+            detalles,
+            estado: totalAdeudado > 0 ? 'cerrado_con_adeudo' : 'cerrado',
+            historialAdeudos: [
+              ...(prestamo.historialAdeudos || []),
+              {
+                tipo: 'cancelacion',
+                adeudoId,
+                productoId: adeudo.productoId,
+                productoNombre: adeudo.productoNombre || '',
+                areaOrigen: normalizeArea(adeudo.areaOrigen),
+                cantidad: toNonNegativeInteger(adeudo.cantidadPendiente),
+                cantidadPendiente: 0,
+                observaciones: obs,
+                usuarioId: actor.id,
+                usuarioNombre: actor.nombre,
+                fecha: nowIso
+              }
+            ],
+            adeudosSaldadosAt: totalAdeudado <= 0 ? serverTimestamp() : (prestamo.adeudosSaldadosAt || null),
+            updatedBy: actor.id,
+            updatedByName: actor.nombre,
+            updatedAt: serverTimestamp()
+          })
+        }
+
         transaction.update(adeudoRef, {
+          cantidadPendiente: 0,
           estado: 'cancelado',
           observaciones: [adeudo.observaciones, `Cancelado: ${obs}`].filter(Boolean).join('\n'),
           historial: [

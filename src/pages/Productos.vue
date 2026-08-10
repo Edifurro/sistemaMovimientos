@@ -70,6 +70,15 @@
               <ion-icon slot="start" :icon="camera"></ion-icon>
               {{ isQuickScannerBusy ? 'Escaneando…' : 'Ajuste rápido' }}
             </ion-button>
+            <ion-button
+              color="success"
+              fill="outline"
+              class="hero-button"
+              @click="exportSegundoPisoToExcel"
+            >
+              <ion-icon slot="start" :icon="downloadOutline"></ion-icon>
+              Exportar 2º Piso
+            </ion-button>
           </div>
         </section>
 
@@ -319,7 +328,17 @@
             @click="shareLabelToPrinterApp"
           >
             <ion-icon slot="start" :icon="print"></ion-icon>
-            {{ isPrinting ? 'Generando...' : 'Imprimir etiqueta' }}
+            {{ isPrinting ? 'Imprimiendo...' : 'Imprimir etiqueta' }}
+          </ion-button>
+          <ion-button
+            v-if="isEditing && isNativePlatform"
+            expand="block"
+            fill="clear"
+            size="small"
+            :disabled="isPrinting"
+            @click="resetTsplPrinter"
+          >
+            Cambiar impresora Bluetooth
           </ion-button>
           <p v-if="printError" class="field-error">{{ printError }}</p>
           </div>
@@ -505,6 +524,8 @@ import { Share } from '@capacitor/share'
 import JsBarcode from 'jsbarcode'
 import { useProducts } from '../composables/useProducts'
 import { usePrestamos } from '../composables/usePrestamos'
+import { useTsplPrinter } from '../composables/useTsplPrinter'
+import { buildProductosAreaWorkbook, stringifyProductosAreaWorkbook } from '../utils/productosExcel'
 import {
   IonPage,
   IonHeader,
@@ -535,7 +556,7 @@ import {
   IonSelectOption,
   onIonViewWillLeave
 } from '@ionic/vue'
-import { add, remove, checkmarkCircle, apps, home, cube, people, swapHorizontal, print, camera, refresh, clipboardOutline, closeOutline } from 'ionicons/icons'
+import { add, remove, checkmarkCircle, apps, home, cube, people, swapHorizontal, print, camera, refresh, clipboardOutline, closeOutline, downloadOutline } from 'ionicons/icons'
 
 const router = useRouter()
 const {
@@ -548,6 +569,8 @@ const {
   deleteProduct: deleteProductAPI
 } = useProducts()
 const { getPrestamos } = usePrestamos()
+const { printBarcodeLabel, forgetPrinter } = useTsplPrinter()
+const isNativePlatform = Capacitor?.isNativePlatform?.() === true
 
 const searchTerm = ref('')
 const areaFilter = ref('TODAS')
@@ -630,9 +653,9 @@ const formData = ref({
   codigoBarras: ''
 })
 
-const LABEL_WIDTH_MM = 52
+const LABEL_WIDTH_MM = 51
 const LABEL_HEIGHT_MM = 25
-const LABEL_WIDTH_PX = 416
+const LABEL_WIDTH_PX = 408
 const LABEL_HEIGHT_PX = 200
 const LABEL_RENDER_SCALE = 2
 
@@ -929,6 +952,93 @@ const filteredProducts = computed(() => {
 
   return sortedList
 })
+
+const exportSegundoPisoToExcel = async () => {
+  try {
+    const area = 'SEGUNDO_PISO'
+    const exportableProducts = products.value
+      .filter((product) => (
+        product.activo !== false &&
+        (getAvailableStock(product, area) > 0 || getLoanedStock(product.id, area) > 0)
+      ))
+      .map((product) => {
+        const stockNuevo = getStockNuevo(product, area)
+        const stockEmpezado = getStockEmpezado(product, area)
+        const stockDisponible = stockNuevo + stockEmpezado
+        const stockPrestado = getLoanedStock(product.id, area)
+        const stockMinimo = getStockMinimo(product)
+        const estadoStock = stockDisponible <= 0
+          ? 'Sin stock disponible'
+          : stockMinimo > 0 && stockDisponible <= stockMinimo
+            ? 'Stock bajo'
+            : 'Con stock'
+
+        return {
+          id: product.id,
+          codigoBarras: product.codigoBarras || '',
+          nombre: product.nombre || '',
+          formaControl: getControlLabel(product),
+          descripcion: product.descripcion || '',
+          stockNuevo,
+          stockEmpezado,
+          stockDisponible,
+          stockPrestado,
+          stockTotal: stockDisponible + stockPrestado,
+          stockMinimo,
+          estadoStock,
+          precio: product.precio
+        }
+      })
+
+    if (!exportableProducts.length) {
+      printToastMessage.value = 'No hay productos con stock o préstamos registrados en Segundo Piso.'
+      printToastColor.value = 'warning'
+      showPrintToast.value = true
+      return
+    }
+
+    const workbook = buildProductosAreaWorkbook(exportableProducts, AREA_LABELS[area])
+    const fileName = `productos-segundo-piso-${new Date().toISOString().slice(0, 10)}.xlsx`
+
+    if (Capacitor?.isNativePlatform?.()) {
+      const base64Data = stringifyProductosAreaWorkbook(workbook, 'base64')
+      const result = await Filesystem.writeFile({
+        path: fileName,
+        data: base64Data,
+        directory: Directory.Cache,
+        recursive: true
+      })
+
+      await Share.share({
+        title: 'Productos de Segundo Piso',
+        text: 'Inventario Excel de productos de Segundo Piso',
+        files: [result.uri],
+        dialogTitle: 'Compartir inventario de Segundo Piso'
+      })
+    } else {
+      const buffer = stringifyProductosAreaWorkbook(workbook, 'array')
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      })
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = fileName
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    }
+
+    printToastMessage.value = `Excel de Segundo Piso exportado: ${exportableProducts.length} productos.`
+    printToastColor.value = 'success'
+    showPrintToast.value = true
+  } catch (err) {
+    printToastMessage.value = err?.message || 'No se pudo exportar el Excel de Segundo Piso.'
+    printToastColor.value = 'danger'
+    showPrintToast.value = true
+  }
+}
 
 const isBarcodeUnique = (barcode) => {
   const trimmed = String(barcode || '').trim()
@@ -1396,7 +1506,7 @@ const buildLabelPngFileUri = async (code) => {
   const pngBase64 = pngDataUrl.split(',')[1]
   if (!pngBase64) throw new Error('No se pudo generar la imagen de impresión.')
 
-  const fileName = `etiqueta-${safeLabelFileName(code)}-52x25.png`
+  const fileName = `etiqueta-${safeLabelFileName(code)}-51x25.png`
   const result = await Filesystem.writeFile({
     path: fileName,
     data: pngBase64,
@@ -1440,19 +1550,13 @@ const shareLabelToPrinterApp = async () => {
 
   try {
     isPrinting.value = true
-    const fileUri = await buildLabelPngFileUri(barcode)
-    await Share.share({
-      title: 'Etiqueta de producto',
-      text: `Etiqueta ${barcode}. En PC se imprime con el diálogo normal; en móvil se comparte como imagen.`,
-      files: [fileUri],
-      dialogTitle: 'Compartir imagen de etiqueta con app de impresión'
-    })
+    const printer = await printBarcodeLabel(barcode)
 
-    printToastMessage.value = `Etiqueta lista para imprimir - ${barcode}`
+    printToastMessage.value = `Etiqueta impresa en ${printer?.name || 'impresora TSPL'} - ${barcode}`
     printToastColor.value = 'success'
     showPrintToast.value = true
   } catch (err) {
-    const errorMsg = err?.message || 'No se pudo generar la etiqueta.'
+    const errorMsg = err?.message || 'No se pudo imprimir la etiqueta por Bluetooth.'
     if (!errorMsg.includes('cancel') && !errorMsg.includes('dismiss')) {
       printError.value = errorMsg
       printToastMessage.value = errorMsg
@@ -1462,6 +1566,14 @@ const shareLabelToPrinterApp = async () => {
   } finally {
     isPrinting.value = false
   }
+}
+
+const resetTsplPrinter = async () => {
+  await forgetPrinter()
+  printError.value = ''
+  printToastMessage.value = 'Impresora eliminada. La próxima impresión permitirá seleccionar otra.'
+  printToastColor.value = 'success'
+  showPrintToast.value = true
 }
 
 const resetPageUiState = () => {

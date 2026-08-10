@@ -821,14 +821,14 @@
                               </div>
                             </div>
                             <div class="release-comment-field">
-                              <label><strong>Comentarios</strong> <span>(opcional)</span></label>
+                              <label><strong>Comentario de devolución</strong> <span>(opcional)</span></label>
                               <ion-textarea
                                 v-model="liberationItems[getDetailKey(item)].comentarioDevuelto"
                                 class="release-comment-textarea"
                                 rows="2"
                                 aria-label="Comentario de devolución"
                                 placeholder="Agrega una nota sobre la devolución"
-                                :legacy="true"  
+                                :legacy="true"
                               ></ion-textarea>
                             </div>
                           </div>
@@ -863,13 +863,13 @@
                               </div>
                             </div>
                             <div class="release-comment-field">
-                              <label><strong>Comentarios</strong> <span>(opcional)</span></label>
+                              <label><strong>Comentario del estado</strong> <span class="required-mark">*</span></label>
                               <ion-textarea
                                 v-model="liberationItems[getDetailKey(item)].comentarioDevueltoComoEmpezado"
                                 class="release-comment-textarea"
                                 rows="2"
-                                aria-label="Comentarios"
-                                placeholder="Describe el estado del producto"
+                                aria-label="Comentario del estado del producto"
+                                placeholder="Describe el estado del envase abierto"
                                 :legacy="true"
                               ></ion-textarea>
                             </div>
@@ -905,7 +905,7 @@
                               </div>
                             </div>
                             <div class="release-comment-field">
-                              <label><strong>Comentarios</strong> <span>(opcional)</span></label>
+                              <label><strong>Comentario de consumo</strong> <span class="required-mark">*</span></label>
                               <ion-textarea
                                 v-model="liberationItems[getDetailKey(item)].comentarioConsumo"
                                 class="release-comment-textarea"
@@ -1229,7 +1229,7 @@ const filteredPrestamos = computed(() => {
     result = result.filter((p) => p.colaboradorId === listFilters.value.colaboradorId)
   }
   if (selectedSegment.value === 'cerrados' && listFilters.value.estado) {
-    result = result.filter((p) => p.estado === listFilters.value.estado)
+    result = result.filter((p) => getPrestamoEffectiveState(p) === listFilters.value.estado)
   }
   if (listFilters.value.areaOrigen) {
     result = result.filter((p) => (p.detalles || []).some((d) => normalizeAreaKey(d.areaOrigen) === normalizeAreaKey(listFilters.value.areaOrigen)))
@@ -1692,8 +1692,27 @@ const getPrestamoStats = (prestamo) => {
     productos: detalles.length,
     total: detalles.reduce((sum, item) => sum + Number(item.cantidad || 0), 0),
     pendiente: detalles.reduce((sum, item) => sum + getCantidadPendiente(item), 0),
-    adeudo: detalles.reduce((sum, item) => sum + Number(item.cantidadAdeudada || 0), 0)
+    adeudo: getPrestamoPendingDebt(prestamo)
   }
+}
+
+const getDetallePendingDebt = (item) => {
+  if (!isReadOnlyDetail.value || adeudosLoading.value || adeudosError.value) {
+    return Number(item?.cantidadAdeudada || 0)
+  }
+
+  const prestamoId = selectedPrestamoDetail.value?.id
+  if (!prestamoId || !item?.productoId) return Number(item?.cantidadAdeudada || 0)
+  const area = normalizeAreaKey(item.areaOrigen)
+
+  return adeudosProductos.value
+    .filter((adeudo) => (
+      adeudo.prestamoId === prestamoId &&
+      adeudo.productoId === item.productoId &&
+      normalizeAreaKey(adeudo.areaOrigen) === area &&
+      adeudo.estado === 'pendiente'
+    ))
+    .reduce((sum, adeudo) => sum + Number(adeudo.cantidadPendiente || 0), 0)
 }
 
 const getDetalleStats = (item) => ({
@@ -1702,7 +1721,7 @@ const getDetalleStats = (item) => ({
   devueltoNuevo: Number(item?.cantidadDevuelta || 0),
   devueltoEmpezado: Number(item?.cantidadDevueltaComoEmpezado || 0),
   consumido: Number(item?.cantidadConsumida || 0),
-  adeudo: Number(item?.cantidadAdeudada || 0),
+  adeudo: getDetallePendingDebt(item),
   nuevos: Number(item?.cantidadDesdeStockNuevo || 0),
   empezados: Number(item?.cantidadDesdeStockEmpezado || 0)
 })
@@ -1875,27 +1894,46 @@ const changeAdeudoQuantity = (delta) => {
   adeudoForm.value.cantidadSaldar = Number(adeudoForm.value.cantidadSaldar || 0) + Number(delta || 0)
   normalizeAdeudoQuantity()
 }
-const prestamoHasAdeudo = (prestamo) => (prestamo.detalles || []).some((item) => Number(item.cantidadAdeudada || 0) > 0) || prestamo.estado === 'cerrado_con_adeudo'
+const getPrestamoStoredDebt = (prestamo) => (prestamo?.detalles || [])
+  .reduce((sum, item) => sum + Number(item.cantidadAdeudada || 0), 0)
+
+const getPrestamoPendingDebt = (prestamo) => {
+  if (!prestamo?.id) return getPrestamoStoredDebt(prestamo)
+  if (adeudosLoading.value || adeudosError.value) return getPrestamoStoredDebt(prestamo)
+
+  return adeudosProductos.value
+    .filter((adeudo) => adeudo.prestamoId === prestamo.id && adeudo.estado === 'pendiente')
+    .reduce((sum, adeudo) => sum + Number(adeudo.cantidadPendiente || 0), 0)
+}
+
+const prestamoHasAdeudo = (prestamo) => getPrestamoPendingDebt(prestamo) > 0
+
+const getPrestamoEffectiveState = (prestamo) => {
+  if (prestamo?.estado === 'cerrado_con_adeudo' && !prestamoHasAdeudo(prestamo)) return 'cerrado'
+  return prestamo?.estado || 'abierto'
+}
 
 const getPrestamoResumen = (prestamo) => {
   const detalles = prestamo.detalles || []
   const productos = detalles.length
   const pendiente = detalles.reduce((sum, item) => sum + getCantidadPendiente(item), 0)
-  const adeudado = detalles.reduce((sum, item) => sum + Number(item.cantidadAdeudada || 0), 0)
+  const adeudado = getPrestamoPendingDebt(prestamo)
   return `${productos} producto(s) · ${pendiente} unidad(es) pendientes · ${adeudado} adeudadas`
 }
 
 const getPrestamoEstadoLabel = (prestamo) => {
-  if (prestamo?.estado === 'pendiente_revision') return 'Por revisar'
-  if (prestamo?.estado === 'cerrado_con_adeudo') return 'Cerrado con adeudo'
-  if (prestamo?.estado === 'cerrado') return 'Cerrado'
+  const estado = getPrestamoEffectiveState(prestamo)
+  if (estado === 'pendiente_revision') return 'Por revisar'
+  if (estado === 'cerrado_con_adeudo') return 'Cerrado con adeudo'
+  if (estado === 'cerrado') return 'Cerrado'
   return 'Abierto'
 }
 
 const getPrestamoBadgeClass = (prestamo) => {
-  if (prestamo.estado === 'cerrado_con_adeudo') return 'prestamo-badge--vencido'
-  if (prestamo.estado === 'cerrado') return 'prestamo-badge--devuelto'
-  if (prestamo.estado === 'pendiente_revision') return 'prestamo-badge--revision'
+  const estado = getPrestamoEffectiveState(prestamo)
+  if (estado === 'cerrado_con_adeudo') return 'prestamo-badge--vencido'
+  if (estado === 'cerrado') return 'prestamo-badge--devuelto'
+  if (estado === 'pendiente_revision') return 'prestamo-badge--revision'
   return 'prestamo-badge--activo'
 }
 
