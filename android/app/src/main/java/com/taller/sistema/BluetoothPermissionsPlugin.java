@@ -16,7 +16,10 @@ import com.getcapacitor.annotation.PermissionCallback;
     permissions = {
         @Permission(
             alias = "bluetooth",
-            strings = { Manifest.permission.BLUETOOTH_CONNECT }
+            strings = {
+                Manifest.permission.BLUETOOTH_CONNECT,
+                Manifest.permission.BLUETOOTH_SCAN
+            }
         )
     }
 )
