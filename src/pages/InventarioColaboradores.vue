@@ -147,7 +147,10 @@
             >
               Importar Excel
             </ion-button>
-            <ion-button expand="block" fill="outline" @click="exportToExcel">Exportar Excel</ion-button>
+            <ion-button expand="block" fill="outline" :disabled="isExporting" @click="exportToExcel">
+              <ion-icon slot="start" :icon="downloadOutline"></ion-icon>
+              {{ isExporting ? 'Exportando…' : 'Exportar Excel' }}
+            </ion-button>
             <ion-button expand="block" fill="outline" color="tertiary" @click="startConteoForSelectedCollaborator" :disabled="!colaboradorFilter">
               <ion-icon slot="start" :icon="people"></ion-icon>
               Iniciar conteo
@@ -451,7 +454,6 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { Capacitor } from '@capacitor/core'
 import { Directory, Filesystem } from '@capacitor/filesystem'
-import { Share } from '@capacitor/share'
 import JsBarcode from 'jsbarcode'
 import { BarcodeFormat, BarcodeScanner } from '@capacitor-mlkit/barcode-scanning'
 import { useColaboradores } from '../composables/useColaboradores'
@@ -461,9 +463,9 @@ import { useInventarioColaboradores } from '../composables/useInventarioColabora
 import { useTsplPrinter } from '../composables/useTsplPrinter'
 import {
   buildInventarioColaboradoresWorkbook,
-  parseInventarioColaboradoresWorkbook,
-  stringifyInventarioColaboradoresWorkbook
+  parseInventarioColaboradoresWorkbook
 } from '../utils/inventarioColaboradoresExcel'
+import { exportXlsxWorkbook } from '../utils/excelExport'
 import {
   IonPage,
   IonHeader,
@@ -499,7 +501,7 @@ import {
   IonAlert,
   onIonViewWillLeave
 } from '@ionic/vue'
-import { add, apps, home, cube, people, swapHorizontal, clipboardOutline, refresh, closeOutline, print, camera } from 'ionicons/icons'
+import { add, apps, home, cube, people, swapHorizontal, clipboardOutline, refresh, closeOutline, print, camera, downloadOutline } from 'ionicons/icons'
 
 const router = useRouter()
 const { colaboradores, getColaboradores } = useColaboradores()
@@ -536,6 +538,7 @@ const barcodeSvgRef = ref(null)
 const showToast = ref(false)
 const toastMessage = ref('')
 const toastColor = ref('success')
+const isExporting = ref(false)
 const showDeleteConfirm = ref(false)
 
 const showImportResultAlert = ref(false)
@@ -1486,50 +1489,45 @@ const confirmImport = async () => {
   }
 }
 
+const safeExportSlug = (value = 'todos') => String(value || 'todos')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-+|-+$/g, '') || 'todos'
+
 const exportToExcel = async () => {
+  isExporting.value = true
+
   try {
-    const rows = filteredInventario.value.length ? filteredInventario.value : inventarioColaboradores.value
+    const rows = filteredInventario.value
     if (!rows.length) {
-      await showFeedback('No hay registros para exportar.', 'warning')
+      await showFeedback('No hay registros para exportar con los filtros actuales.', 'warning')
       return
     }
 
+    const selectedCollaborator = colaboradorFilter.value
+      ? colaboradores.value.find((item) => String(item.id || '') === String(colaboradorFilter.value))
+      : null
+    const scopeName = selectedCollaborator?.nombre || 'Todos los colaboradores'
+    const scopeSlug = selectedCollaborator ? safeExportSlug(selectedCollaborator.nombre) : 'todos'
+    const statusSlug = estadoFilter.value !== 'todos' ? `-${safeExportSlug(estadoFilter.value)}` : ''
     const workbook = buildInventarioColaboradoresWorkbook(rows)
-    const fileName = `inventario-colaboradores-${new Date().toISOString().slice(0, 10)}.xlsx`
+    const fileName = `inventario-colaboradores-${scopeSlug}${statusSlug}-${new Date().toISOString().slice(0, 10)}.xlsx`
 
-    if (Capacitor?.isNativePlatform?.()) {
-      const base64Data = stringifyInventarioColaboradoresWorkbook(workbook, 'base64')
-      const result = await Filesystem.writeFile({
-        path: fileName,
-        data: base64Data,
-        directory: Directory.Cache,
-        recursive: true
-      })
+    await exportXlsxWorkbook({
+      workbook,
+      fileName,
+      title: `Inventario - ${scopeName}`,
+      text: `Archivo Excel del inventario de ${scopeName.toLowerCase()}`,
+      dialogTitle: 'Compartir inventario de colaboradores'
+    })
 
-      await Share.share({
-        title: 'Inventario de colaboradores',
-        text: 'Archivo Excel del inventario de colaboradores',
-        files: [result.uri],
-        dialogTitle: 'Compartir inventario'
-      })
-    } else {
-      const buffer = stringifyInventarioColaboradoresWorkbook(workbook, 'array')
-      const blob = new Blob([buffer], {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-      })
-      const url = window.URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = fileName
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      window.URL.revokeObjectURL(url)
-    }
-
-    await showFeedback('Excel exportado correctamente.', 'success')
+    await showFeedback(`Excel exportado: ${rows.length} registros de ${scopeName}.`, 'success')
   } catch (err) {
     await showFeedback(err?.message || 'No se pudo exportar el Excel.', 'danger')
+  } finally {
+    isExporting.value = false
   }
 }
 

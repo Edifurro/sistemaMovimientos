@@ -46,6 +46,14 @@ const normalizeDateValue = (value = '') => {
     return ''
   }
 
+  if (typeof value?.toDate === 'function') {
+    return normalizeDateValue(value.toDate())
+  }
+
+  if (Number.isFinite(Number(value?.seconds))) {
+    return normalizeDateValue(new Date(Number(value.seconds) * 1000))
+  }
+
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
     return value.toISOString().slice(0, 10)
   }
@@ -65,6 +73,13 @@ const normalizeDateValue = (value = '') => {
   }
 
   return raw
+}
+
+const formatEstadoLabel = (value = '') => {
+  const estado = normalizeEstado(value)
+  if (estado === 'faltante') return 'Faltante'
+  if (estado === 'incompleto') return 'Incompleto'
+  return 'Completo'
 }
 
 const valueFromNormalizedRow = (normalizedRow, aliases = []) => {
@@ -138,12 +153,28 @@ const uniqueSheetName = (baseName, usedNames) => {
 }
 
 const buildSheetRows = (collaboratorName, collaboratorCode, items = []) => {
+  const totalQuantity = items.reduce((acc, item) => acc + normalizeQuantity(item.cantidad, 1), 0)
   const rows = [
     ['Colaborador', normalizeText(collaboratorName) || 'Sin colaborador'],
     ['Codigo empleado', normalizeText(collaboratorCode)],
-    ['Total herramientas', items.length],
+    ['Fecha de exportacion', new Date().toLocaleString('es-MX')],
+    ['Registros', items.length],
+    ['Cantidad total', totalQuantity],
     [],
-    ['Codigo de barras', 'Herramienta', 'Marca', 'Cantidad', 'Estado', 'Comentario', 'Fecha de entrega', 'Descripcion', 'Categoria']
+    [
+      'Codigo de barras',
+      'Herramienta',
+      'Marca',
+      'Cantidad',
+      'Estado',
+      'Comentario',
+      'Fecha de entrega',
+      'Descripcion',
+      'Categoria',
+      'ID colaborador',
+      'ID Firebase',
+      'Fecha de captura'
+    ]
   ]
 
   items.forEach((item) => {
@@ -152,15 +183,43 @@ const buildSheetRows = (collaboratorName, collaboratorCode, items = []) => {
       normalizeText(item.herramienta),
       normalizeText(item.marca),
       normalizeQuantity(item.cantidad, 1),
-      normalizeText(item.estado),
+      formatEstadoLabel(item.estado),
       normalizeText(item.comentario),
       normalizeDateValue(item.fechaEntrega),
       normalizeText(item.descripcion),
-      normalizeText(item.categoria)
+      normalizeText(item.categoria),
+      normalizeText(item.colaboradorId),
+      normalizeText(item.id),
+      normalizeDateValue(item.fechaCaptura || item.createdAt)
     ])
   })
 
   return rows
+}
+
+const applyWorksheetLayout = (worksheet, itemCount) => {
+  worksheet['!cols'] = [
+    { wch: 18 },
+    { wch: 28 },
+    { wch: 18 },
+    { wch: 11 },
+    { wch: 14 },
+    { wch: 34 },
+    { wch: 17 },
+    { wch: 36 },
+    { wch: 20 },
+    { wch: 28 },
+    { wch: 28 },
+    { wch: 18 }
+  ]
+
+  if (!itemCount) return
+
+  worksheet['!autofilter'] = { ref: `A7:L${itemCount + 7}` }
+  for (let rowIndex = 7; rowIndex < itemCount + 7; rowIndex += 1) {
+    const quantityCell = worksheet[XLSX.utils.encode_cell({ r: rowIndex, c: 3 })]
+    if (quantityCell?.t === 'n') quantityCell.z = '#,##0'
+  }
 }
 
 export const buildInventarioColaboradoresWorkbook = (items = []) => {
@@ -196,18 +255,19 @@ export const buildInventarioColaboradoresWorkbook = (items = []) => {
     })
 
     const worksheet = XLSX.utils.aoa_to_sheet(buildSheetRows(group.colaboradorNombre, group.codigoEmpleado, orderedItems))
+    applyWorksheetLayout(worksheet, orderedItems.length)
     XLSX.utils.book_append_sheet(workbook, worksheet, sheetName)
   })
 
   if (!sortedGroups.length) {
-    const worksheet = XLSX.utils.aoa_to_sheet([
-      ['Colaborador', 'Sin colaborador'],
-      ['Codigo empleado', ''],
-      ['Total herramientas', 0],
-      [],
-      ['Codigo de barras', 'Herramienta', 'Marca', 'Cantidad', 'Estado', 'Comentario', 'Fecha de entrega', 'Descripcion', 'Categoria']
-    ])
+    const worksheet = XLSX.utils.aoa_to_sheet(buildSheetRows('Sin colaborador', '', []))
+    applyWorksheetLayout(worksheet, 0)
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Sin colaborador')
+  }
+
+  workbook.Props = {
+    Title: 'Inventario de colaboradores',
+    Subject: 'Herramientas asignadas por colaborador'
   }
 
   return workbook

@@ -7,6 +7,12 @@ const normalizeNumber = (value, fallback = 0) => {
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
+const normalizeSheetName = (value = 'Inventario') => String(value || 'Inventario')
+  .replace(/[\\/?*\[\]:]/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .slice(0, 31) || 'Inventario'
+
 export const buildProductosAreaWorkbook = (items = [], areaLabel = 'Segundo Piso') => {
   const orderedItems = [...items].sort((left, right) => (
     normalizeText(left.nombre).localeCompare(normalizeText(right.nombre), 'es-MX', { sensitivity: 'base' })
@@ -72,10 +78,24 @@ export const buildProductosAreaWorkbook = (items = [], areaLabel = 'Segundo Piso
   ]
   if (orderedItems.length) {
     worksheet['!autofilter'] = { ref: `A5:M${orderedItems.length + 5}` }
+
+    for (let rowIndex = 5; rowIndex < orderedItems.length + 5; rowIndex += 1) {
+      for (let columnIndex = 4; columnIndex <= 9; columnIndex += 1) {
+        const cell = worksheet[XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex })]
+        if (cell) cell.z = '#,##0.##'
+      }
+
+      const priceCell = worksheet[XLSX.utils.encode_cell({ r: rowIndex, c: 11 })]
+      if (priceCell?.t === 'n') priceCell.z = '"$"#,##0.00'
+    }
   }
 
   const workbook = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Segundo Piso')
+  workbook.Props = {
+    Title: `Inventario de productos - ${areaLabel}`,
+    Subject: `Stock de productos en ${areaLabel}`
+  }
+  XLSX.utils.book_append_sheet(workbook, worksheet, normalizeSheetName(areaLabel))
   return workbook
 }
 

@@ -1,5 +1,12 @@
 const PRINTER_STORAGE_KEY = 'tsplPrinterDeviceId'
 const CONNECT_TIMEOUT_MS = 12000
+const PRINTER_DOTS_PER_MM = 8
+const LABEL_HORIZONTAL_MARGIN_DOTS = 16
+const CODE128_MODULES_PER_CODEWORD = 11
+const CODE128_STOP_MODULES = 13
+const CODE128_QUIET_ZONE_MODULES = 10
+const CODE128_MAX_MODULE_DOTS = 5
+const CODE128_RENDER_WIDTH_FACTOR = 0.75
 
 let connectedDeviceId = ''
 
@@ -97,6 +104,52 @@ const sanitizeTsplValue = (value) => String(value || '')
   .trim()
   .replace(/["\r\n]/g, '')
 
+const isDigitPairAt = (value, index) => /^\d{2}$/.test(value.slice(index, index + 2))
+
+const estimateCode128Modules = (value) => {
+  const length = value.length
+  const modeB = Array(length + 1).fill(Number.POSITIVE_INFINITY)
+  const modeC = Array(length + 1).fill(Number.POSITIVE_INFINITY)
+
+  // Cada inicio, cambio de subconjunto, carácter o par numérico ocupa un codeword.
+  modeB[0] = 1
+  if (isDigitPairAt(value, 0)) modeC[0] = 1
+
+  for (let index = 0; index < length; index += 1) {
+    if (Number.isFinite(modeB[index])) {
+      modeB[index + 1] = Math.min(modeB[index + 1], modeB[index] + 1)
+      if (isDigitPairAt(value, index)) {
+        modeC[index + 2] = Math.min(modeC[index + 2], modeB[index] + 2)
+      }
+    }
+
+    if (Number.isFinite(modeC[index])) {
+      modeB[index + 1] = Math.min(modeB[index + 1], modeC[index] + 2)
+      if (isDigitPairAt(value, index)) {
+        modeC[index + 2] = Math.min(modeC[index + 2], modeC[index] + 1)
+      }
+    }
+  }
+
+  const encodedCodewords = Math.min(modeB[length], modeC[length])
+  const codewordsWithChecksum = encodedCodewords + 1
+  return (codewordsWithChecksum * CODE128_MODULES_PER_CODEWORD) + CODE128_STOP_MODULES
+}
+
+const selectCode128ModuleWidth = (estimatedModules, labelWidthDots) => {
+  for (let moduleDots = CODE128_MAX_MODULE_DOTS; moduleDots >= 1; moduleDots -= 1) {
+    const quietZoneDots = CODE128_QUIET_ZONE_MODULES * moduleDots * CODE128_RENDER_WIDTH_FACTOR
+    const requiredMarginDots = Math.max(LABEL_HORIZONTAL_MARGIN_DOTS, quietZoneDots)
+    const barcodeWidthDots = estimatedModules * moduleDots * CODE128_RENDER_WIDTH_FACTOR
+
+    if (barcodeWidthDots + (requiredMarginDots * 2) <= labelWidthDots) {
+      return moduleDots
+    }
+  }
+
+  return 0
+}
+
 export const buildTsplBarcodeLabel = (
   value,
   { widthMm = 51, heightMm = 25, copies = 1 } = {}
@@ -107,9 +160,23 @@ export const buildTsplBarcodeLabel = (
 
   const labelWidth = Number(widthMm) || 51
   const labelHeight = Number(heightMm) || 25
+  const labelWidthDots = Math.round(labelWidth * PRINTER_DOTS_PER_MM)
   const printCopies = Math.max(1, Math.min(20, Math.trunc(Number(copies) || 1)))
-  const narrowBar = barcode.length <= 12 ? 2 : 1
-  const wideBar = 2
+  const estimatedModules = estimateCode128Modules(barcode)
+  const narrowBar = selectCode128ModuleWidth(estimatedModules, labelWidthDots)
+  const wideBar = narrowBar
+  const barcodeWidthDots = Math.round(
+    estimatedModules * narrowBar * CODE128_RENDER_WIDTH_FACTOR
+  )
+
+  if (!narrowBar) {
+    throw new Error('El código es demasiado largo para imprimirse con márgenes seguros en una etiqueta de 51 × 25 mm.')
+  }
+
+  const barcodeX = Math.max(
+    LABEL_HORIZONTAL_MARGIN_DOTS,
+    Math.round((labelWidthDots - barcodeWidthDots) / 2)
+  )
 
   return [
     `SIZE ${labelWidth} mm,${labelHeight} mm`,
@@ -120,7 +187,7 @@ export const buildTsplBarcodeLabel = (
     'SPEED 3',
     'DENSITY 8',
     'CLS',
-    `BARCODE 16,20,"128",155,0,0,${narrowBar},${wideBar},"${barcode}"`,
+    `BARCODE ${barcodeX},20,"128",155,0,0,${narrowBar},${wideBar},"${barcode}"`,
     `PRINT 1,${printCopies}`,
     ''
   ].join('\r\n')

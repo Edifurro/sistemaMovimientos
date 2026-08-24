@@ -74,10 +74,11 @@
               color="success"
               fill="outline"
               class="hero-button"
-              @click="exportSegundoPisoToExcel"
+              :disabled="isExporting"
+              @click="openExportAreaSelector"
             >
               <ion-icon slot="start" :icon="downloadOutline"></ion-icon>
-              Exportar 2º Piso
+              {{ isExporting ? 'Exportando…' : 'Exportar inventario' }}
             </ion-button>
           </div>
         </section>
@@ -138,27 +139,59 @@
             </ion-item>
           </div>
 
-          <ion-segment
-            :value="areaFilter"
-            class="area-filter-segment"
-            aria-label="Filtro de stock por área"
-            @ionChange="areaFilter = $event.detail.value || 'TODAS'"
-          >
-            <ion-segment-button
-              value="TODAS"
-              :class="{ 'area-filter-option--selected': areaFilter === 'TODAS' }"
+          <div class="catalog-filter-group">
+            <span class="catalog-filter-label">Ubicación</span>
+            <ion-segment
+              :value="areaFilter"
+              class="area-filter-segment"
+              aria-label="Filtro de stock por área"
+              @ionChange="areaFilter = $event.detail.value || 'TODAS'"
             >
-              Todas
-            </ion-segment-button>
-            <ion-segment-button
-              v-for="area in AREAS_TALLER"
-              :key="area"
-              :value="area"
-              :class="{ 'area-filter-option--selected': areaFilter === area }"
+              <ion-segment-button
+                value="TODAS"
+                :class="{ 'area-filter-option--selected': areaFilter === 'TODAS' }"
+              >
+                Todas
+              </ion-segment-button>
+              <ion-segment-button
+                v-for="area in AREAS_TALLER"
+                :key="area"
+                :value="area"
+                :class="{ 'area-filter-option--selected': areaFilter === area }"
+              >
+                {{ area === 'SEGUNDO_PISO' ? '2º Piso' : AREA_LABELS[area] }}
+              </ion-segment-button>
+            </ion-segment>
+          </div>
+
+          <div class="catalog-filter-group">
+            <span class="catalog-filter-label">Tipo de producto</span>
+            <ion-segment
+              :value="productTypeFilter"
+              class="area-filter-segment product-type-filter-segment"
+              aria-label="Filtro por tipo de producto"
+              @ionChange="productTypeFilter = $event.detail.value || 'TODOS'"
             >
-              {{ area === 'SEGUNDO_PISO' ? '2º Piso' : AREA_LABELS[area] }}
-            </ion-segment-button>
-          </ion-segment>
+              <ion-segment-button
+                value="TODOS"
+                :class="{ 'area-filter-option--selected': productTypeFilter === 'TODOS' }"
+              >
+                Todos
+              </ion-segment-button>
+              <ion-segment-button
+                value="HERRAMIENTA"
+                :class="{ 'area-filter-option--selected': productTypeFilter === 'HERRAMIENTA' }"
+              >
+                Herramientas
+              </ion-segment-button>
+              <ion-segment-button
+                value="MATERIAL"
+                :class="{ 'area-filter-option--selected': productTypeFilter === 'MATERIAL' }"
+              >
+                Materiales
+              </ion-segment-button>
+            </ion-segment>
+          </div>
         </section>
 
         <div v-if="loading" class="loading-state modern-state">
@@ -492,6 +525,15 @@
       :buttons="deleteConfirmButtons"
     ></ion-alert>
 
+    <ion-alert
+      :is-open="showExportAreaAlert"
+      header="Exportar inventario"
+      message="Selecciona el área que deseas exportar a Excel."
+      :inputs="exportAreaInputs"
+      :buttons="exportAreaButtons"
+      @didDismiss="showExportAreaAlert = false"
+    ></ion-alert>
+
     <ion-toast
       :is-open="showSaveToast"
       :message="toastMessage"
@@ -520,12 +562,12 @@ import { useRouter } from 'vue-router'
 import { Capacitor } from '@capacitor/core'
 import { BarcodeFormat, BarcodeScanner } from '@capacitor-mlkit/barcode-scanning'
 import { Directory, Filesystem } from '@capacitor/filesystem'
-import { Share } from '@capacitor/share'
 import JsBarcode from 'jsbarcode'
 import { useProducts } from '../composables/useProducts'
 import { usePrestamos } from '../composables/usePrestamos'
 import { useTsplPrinter } from '../composables/useTsplPrinter'
-import { buildProductosAreaWorkbook, stringifyProductosAreaWorkbook } from '../utils/productosExcel'
+import { buildProductosAreaWorkbook } from '../utils/productosExcel'
+import { exportXlsxWorkbook } from '../utils/excelExport'
 import {
   IonPage,
   IonHeader,
@@ -574,6 +616,7 @@ const isNativePlatform = Capacitor?.isNativePlatform?.() === true
 
 const searchTerm = ref('')
 const areaFilter = ref('TODAS')
+const productTypeFilter = ref('TODOS')
 const sortMode = ref('name-asc')
 const isModulesMenuOpen = ref(false)
 const isModalOpen = ref(false)
@@ -593,6 +636,8 @@ const printError = ref('')
 const showPrintToast = ref(false)
 const printToastMessage = ref('')
 const printToastColor = ref('success')
+const showExportAreaAlert = ref(false)
+const isExporting = ref(false)
 const touched = ref({
   nombre: false,
   categoriaControl: false,
@@ -606,6 +651,36 @@ const sessionGeneratedCodes = ref(new Set())
 
 const AREAS_TALLER = ['OFICINA', 'BODEGA', 'SEGUNDO_PISO']
 const AREA_LABELS = { OFICINA: 'Oficina', BODEGA: 'Bodega', SEGUNDO_PISO: 'Segundo Piso' }
+const EXPORT_AREA_ORDER = ['OFICINA', 'SEGUNDO_PISO', 'BODEGA']
+const AREA_FILE_SLUGS = { OFICINA: 'oficina', BODEGA: 'bodega', SEGUNDO_PISO: 'segundo-piso' }
+
+const exportAreaInputs = computed(() => {
+  const selectedArea = AREAS_TALLER.includes(areaFilter.value) ? areaFilter.value : 'OFICINA'
+  return EXPORT_AREA_ORDER.map((area) => ({
+    type: 'radio',
+    label: AREA_LABELS[area],
+    value: area,
+    checked: area === selectedArea
+  }))
+})
+
+const exportAreaButtons = [
+  { text: 'Cancelar', role: 'cancel' },
+  {
+    text: 'Exportar',
+    role: 'confirm',
+    handler: (area) => {
+      if (!AREAS_TALLER.includes(area)) return false
+      void exportProductsAreaToExcel(area)
+      return true
+    }
+  }
+]
+
+const openExportAreaSelector = () => {
+  if (isExporting.value) return
+  showExportAreaAlert.value = true
+}
 
 const createEmptyStockPorArea = () => AREAS_TALLER.reduce((acc, area) => {
   acc[area] = { stock: 0, stockEmpezado: 0 }
@@ -891,6 +966,14 @@ const getControlLabel = (product) => {
   return 'Por pieza'
 }
 
+const getProductType = (product) => {
+  const categoria = String(product?.categoriaControl || '').trim().toUpperCase()
+  const legacyType = String(product?.tipo || '').trim().toUpperCase()
+  return categoria === 'HERRAMIENTA' || legacyType === 'HERRAMIENTA'
+    ? 'HERRAMIENTA'
+    : 'MATERIAL'
+}
+
 const isLowStock = (product, area = activeAreaFilter.value) => {
   const available = getAvailableStock(product, area)
   const minimo = getStockMinimo(product)
@@ -909,27 +992,32 @@ const getStockStatusClass = (product) => {
   return isLowStock(product) ? 'ui-chip--warning' : 'ui-chip--success'
 }
 
-const productsSummary = computed(() => {
-  const list = products.value || []
-  return {
-    total: list.length,
-    conStock: list.filter((product) => getAvailableStock(product) > 0).length,
-    stockBajo: list.filter((product) => getAvailableStock(product) <= 0 || isLowStock(product, 'TODAS')).length,
-    prestados: list.reduce((acc, product) => acc + getLoanedStock(product.id), 0)
-  }
-})
-
-const filteredProducts = computed(() => {
+const productsMatchingFilters = computed(() => {
   const query = searchTerm.value.toLowerCase().trim()
-  const baseList = products.value.filter((product) => {
+
+  return products.value.filter((product) => {
     const nombre = (product.nombre || '').toLowerCase()
     const codigo = (product.codigoBarras || '').toLowerCase()
     const matchesSearch = !query || nombre.includes(query) || codigo.includes(query)
     const matchesArea = areaFilter.value === 'TODAS' || getAvailableStock(product, areaFilter.value) > 0 || getLoanedStock(product.id, areaFilter.value) > 0
-    return matchesSearch && matchesArea
+    const matchesType = productTypeFilter.value === 'TODOS' || getProductType(product) === productTypeFilter.value
+    return matchesSearch && matchesArea && matchesType
   })
+})
 
-  const sortedList = [...baseList]
+const productsSummary = computed(() => {
+  const list = productsMatchingFilters.value
+  const selectedArea = activeAreaFilter.value
+  return {
+    total: list.length,
+    conStock: list.filter((product) => getAvailableStock(product, selectedArea) > 0).length,
+    stockBajo: list.filter((product) => getAvailableStock(product, selectedArea) <= 0 || isLowStock(product, selectedArea)).length,
+    prestados: list.reduce((acc, product) => acc + getLoanedStock(product.id, selectedArea), 0)
+  }
+})
+
+const filteredProducts = computed(() => {
+  const sortedList = [...productsMatchingFilters.value]
   const normalizeName = (product) => String(product.nombre || '').trim().toLocaleLowerCase('es-MX')
 
   sortedList.sort((a, b) => {
@@ -953,9 +1041,12 @@ const filteredProducts = computed(() => {
   return sortedList
 })
 
-const exportSegundoPisoToExcel = async () => {
+const exportProductsAreaToExcel = async (areaValue) => {
+  const area = normalizeAreaKey(areaValue)
+  const areaLabel = AREA_LABELS[area]
+  isExporting.value = true
+
   try {
-    const area = 'SEGUNDO_PISO'
     const exportableProducts = products.value
       .filter((product) => (
         product.activo !== false &&
@@ -991,52 +1082,32 @@ const exportSegundoPisoToExcel = async () => {
       })
 
     if (!exportableProducts.length) {
-      printToastMessage.value = 'No hay productos con stock o préstamos registrados en Segundo Piso.'
+      printToastMessage.value = `No hay productos con stock o préstamos registrados en ${areaLabel}.`
       printToastColor.value = 'warning'
       showPrintToast.value = true
       return
     }
 
-    const workbook = buildProductosAreaWorkbook(exportableProducts, AREA_LABELS[area])
-    const fileName = `productos-segundo-piso-${new Date().toISOString().slice(0, 10)}.xlsx`
+    const workbook = buildProductosAreaWorkbook(exportableProducts, areaLabel)
+    const fileName = `productos-${AREA_FILE_SLUGS[area]}-${new Date().toISOString().slice(0, 10)}.xlsx`
 
-    if (Capacitor?.isNativePlatform?.()) {
-      const base64Data = stringifyProductosAreaWorkbook(workbook, 'base64')
-      const result = await Filesystem.writeFile({
-        path: fileName,
-        data: base64Data,
-        directory: Directory.Cache,
-        recursive: true
-      })
+    await exportXlsxWorkbook({
+      workbook,
+      fileName,
+      title: `Productos de ${areaLabel}`,
+      text: `Inventario Excel de productos de ${areaLabel}`,
+      dialogTitle: `Compartir inventario de ${areaLabel}`
+    })
 
-      await Share.share({
-        title: 'Productos de Segundo Piso',
-        text: 'Inventario Excel de productos de Segundo Piso',
-        files: [result.uri],
-        dialogTitle: 'Compartir inventario de Segundo Piso'
-      })
-    } else {
-      const buffer = stringifyProductosAreaWorkbook(workbook, 'array')
-      const blob = new Blob([buffer], {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-      })
-      const url = window.URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = fileName
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      window.URL.revokeObjectURL(url)
-    }
-
-    printToastMessage.value = `Excel de Segundo Piso exportado: ${exportableProducts.length} productos.`
+    printToastMessage.value = `Excel de ${areaLabel} exportado: ${exportableProducts.length} productos.`
     printToastColor.value = 'success'
     showPrintToast.value = true
   } catch (err) {
-    printToastMessage.value = err?.message || 'No se pudo exportar el Excel de Segundo Piso.'
+    printToastMessage.value = err?.message || `No se pudo exportar el Excel de ${areaLabel}.`
     printToastColor.value = 'danger'
     showPrintToast.value = true
+  } finally {
+    isExporting.value = false
   }
 }
 
@@ -1995,6 +2066,19 @@ onBeforeRouteLeave(() => {
   grid-template-columns: minmax(0, 1fr) minmax(8rem, 9.6rem);
   align-items: center;
   gap: 0.42rem;
+}
+
+.catalog-filter-group {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.catalog-filter-label {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .area-filter-segment {
