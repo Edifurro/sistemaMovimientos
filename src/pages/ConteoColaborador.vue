@@ -80,7 +80,23 @@
             <span class="overview-label">Extras</span>
             <strong>{{ currentConteo?.summary?.extras ?? 0 }}</strong>
           </article>
+          <article class="overview-card overview-card--warning">
+            <span class="overview-label">Reposición pendiente</span>
+            <strong>{{ currentConteo?.summary?.replacementPending ?? 0 }}</strong>
+          </article>
         </section>
+
+        <div
+          v-if="(currentConteo?.summary?.replacementPending ?? 0) > 0"
+          class="notice-card notice-card--replacement"
+        >
+          <strong>Reposición pendiente</strong>
+          <p>
+            {{ currentConteo.summary.replacementPending }}
+            herramienta(s) ya fueron entregadas por el colaborador y están esperando reposición.
+            No forman parte del inventario físico que debe escanearse.
+          </p>
+        </div>
 
         <div v-if="currentConteo && !allExpectedScanned" class="notice-card">
           <strong>Conteo pendiente</strong>
@@ -413,7 +429,7 @@ const filteredScannedItems = computed(() => {
 
 const allExpectedScanned = computed(() => {
   const expected = currentConteo.value?.expectedItems || []
-  if (!expected.length) return false
+  if (!expected.length) return true
   for (const item of expected) {
     const totalScanned = (scannedItems.value || []).filter((s) => String(s.matchedItemId) === String(item.id)).reduce((acc, s) => acc + Number(s.cantidad || 1), 0)
     const expectedQty = Number(item.cantidad || 1)
@@ -604,6 +620,7 @@ const getEstadoClassForExpected = (item) => {
   const expectedQty = Number(item.cantidad || 1)
   if (scannedQty === 0) {
     const estado = String(item.estado || '').toLowerCase()
+    if (estado === 'reposicion_pendiente' || estado === 'reposicion pendiente' || estado === 'reposición pendiente') return 'inventory-row--replacement'
     if (estado === 'completo') return 'inventory-row--complete'
     if (estado === 'incompleto') return 'inventory-row--incomplete'
     if (estado === 'faltante') return 'inventory-row--missing'
@@ -618,6 +635,7 @@ const getEstadoLabelForExpected = (item) => {
   const expectedQty = Number(item.cantidad || 1)
   if (scannedQty === 0) {
     const estado = String(item.estado || '').toLowerCase()
+    if (estado === 'reposicion_pendiente' || estado === 'reposicion pendiente' || estado === 'reposición pendiente') return 'Reposición pendiente'
     if (estado === 'completo') return 'Completo'
     if (estado === 'incompleto') return 'Incompleto'
     if (estado === 'faltante') return 'Faltante'
@@ -629,6 +647,7 @@ const getEstadoLabelForExpected = (item) => {
 
 const getEstadoBadgeClassForExpected = (item) => {
   const cls = getEstadoClassForExpected(item)
+  if (cls === 'inventory-row--replacement') return 'inventory-badge--replacement'
   if (cls === 'inventory-row--missing') return 'inventory-badge--missing'
   if (cls === 'inventory-row--incomplete') return 'inventory-badge--incomplete'
   return 'inventory-badge--complete'
@@ -636,6 +655,7 @@ const getEstadoBadgeClassForExpected = (item) => {
 
 const getScannedRowClass = (s) => {
   const estado = String(s?.estado || '').toLowerCase()
+  if (estado === 'reposicion_pendiente' || estado === 'reposicion pendiente' || estado === 'reposición pendiente') return 'inventory-row--replacement'
   if (estado === 'completo') return 'inventory-row--complete'
   if (estado === 'incompleto') return 'inventory-row--incomplete'
   if (estado === 'faltante') return 'inventory-row--missing'
@@ -652,6 +672,7 @@ const getScannedRowClass = (s) => {
 
 const getScannedBadgeClass = (s) => {
   const estado = String(s?.estado || '').toLowerCase()
+  if (estado === 'reposicion_pendiente' || estado === 'reposicion pendiente' || estado === 'reposición pendiente') return 'inventory-badge--replacement'
   if (estado === 'completo') return 'inventory-badge--complete'
   if (estado === 'incompleto') return 'inventory-badge--incomplete'
   if (estado === 'faltante') return 'inventory-badge--missing'
@@ -986,6 +1007,10 @@ const finalize = async () => {
   border-left-color: #fca5a5;
 }
 
+.inventory-row--replacement .inventory-card-content {
+  border-left-color: #f59e0b;
+}
+
 .inventory-topline {
   display: flex;
   justify-content: space-between;
@@ -1049,6 +1074,12 @@ const finalize = async () => {
   color: #b91c1c;
   background: #fef2f2;
   border-color: #fecaca;
+}
+
+.inventory-badge--replacement {
+  color: #92400e;
+  background: #fff7ed;
+  border-color: #fed7aa;
 }
 
 .inventory-metric-grid {

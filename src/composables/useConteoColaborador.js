@@ -16,24 +16,28 @@ import {
 
 const COLLECTION_NAME = 'conteos_colaboradores'
 const INVENTARIO_COLAB = 'inventario_colaboradores'
+const ESTADO_REPOSICION_PENDIENTE = 'reposicion_pendiente'
 
 const currentConteo = ref(null)
 const scannedItems = ref([])
 const loading = ref(false)
 const error = ref(null)
 
+const isReposicionPendiente = (estado) => {
+  const normalized = String(estado ?? '').trim().toLowerCase()
+  return normalized === ESTADO_REPOSICION_PENDIENTE ||
+    normalized === 'reposicion pendiente' ||
+    normalized === 'reposición pendiente'
+}
+
 const mapError = (err) => {
   const code = err?.code || ''
   const message = String(err?.message || '')
-
   if (
     code === 'permission-denied' ||
     message.includes('PERMISSION_DENIED') ||
     message.includes('Missing or insufficient permissions')
-  ) {
-    return 'No tienes permisos para gestionar los conteos.'
-  }
-
+  ) return 'No tienes permisos para gestionar los conteos.'
   return err?.message || 'Ocurrio un error al gestionar el conteo.'
 }
 
@@ -42,10 +46,12 @@ export function useConteoColaborador() {
     loading.value = true
     error.value = null
     try {
-      // traer inventario actual del colaborador
       const invQuery = query(collection(db, INVENTARIO_COLAB), where('colaboradorId', '==', String(colaboradorId)))
       const invSnapshot = await getDocs(invQuery)
-      const expectedItems = invSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }))
+      const allItems = invSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }))
+
+      const replacementPendingItems = allItems.filter((item) => isReposicionPendiente(item.estado))
+      const expectedItems = allItems.filter((item) => !isReposicionPendiente(item.estado))
 
       const now = new Date().toISOString()
       const payload = {
@@ -56,14 +62,33 @@ export function useConteoColaborador() {
         startedAt: now,
         finishedAt: null,
         applied: false,
-        // Preserve estado and comentario so expected items render with real inventory info
-        expectedItems: expectedItems.map((i) => ({ id: i.id, barcode: i.barcode || i.id, herramienta: i.herramienta || '', marca: i.marca || '', cantidad: Number(i.cantidad || 1), descripcion: i.descripcion || '', estado: i.estado || '', comentario: i.comentario || '' })),
+        expectedItems: expectedItems.map((i) => ({
+          id: i.id,
+          barcode: i.barcode || i.id,
+          herramienta: i.herramienta || '',
+          marca: i.marca || '',
+          cantidad: Number(i.cantidad || 1),
+          descripcion: i.descripcion || '',
+          estado: i.estado || '',
+          comentario: i.comentario || ''
+        })),
+        replacementPendingItems: replacementPendingItems.map((i) => ({
+          id: i.id,
+          barcode: i.barcode || i.id,
+          herramienta: i.herramienta || '',
+          marca: i.marca || '',
+          cantidad: Number(i.cantidad || 1),
+          descripcion: i.descripcion || '',
+          estado: ESTADO_REPOSICION_PENDIENTE,
+          comentario: i.comentario || ''
+        })),
         summary: {
           expected: expectedItems.length,
           scanned: 0,
           present: 0,
           missing: expectedItems.length,
-          extras: 0
+          extras: 0,
+          replacementPending: replacementPendingItems.length
         },
         createdAt: now,
         updatedAt: now
@@ -133,12 +158,18 @@ export function useConteoColaborador() {
       const missing = Math.max(0, expectedCount - present)
       const extras = scanned.filter((s) => !s.matchedItemId).length
 
+      const existingSummary = conteo.summary || {}
+      const replacementPending = Array.isArray(conteo.replacementPendingItems)
+        ? conteo.replacementPendingItems.length
+        : Number(existingSummary.replacementPending || 0)
+
       const summary = {
         expected: expectedCount,
         scanned: scanned.length,
         present,
         missing,
-        extras
+        extras,
+        replacementPending
       }
 
       await updateDoc(doc(db, COLLECTION_NAME, String(conteoId)), { summary, updatedAt: new Date().toISOString() })
@@ -146,7 +177,6 @@ export function useConteoColaborador() {
       scannedItems.value = scanned
       return summary
     } catch (err) {
-      // non-fatal
       console.warn('recalcSummary error', err)
     }
   }
@@ -155,7 +185,6 @@ export function useConteoColaborador() {
     loading.value = true
     error.value = null
     try {
-      // Attach inspector info from parent conteo for auditing and rule checks
       const conteoSnap = await getDoc(doc(db, COLLECTION_NAME, String(conteoId)))
       const conteoData = conteoSnap.exists() ? conteoSnap.data() : {}
       const inspectorId = String(conteoData?.inspectorId || '')
@@ -166,12 +195,11 @@ export function useConteoColaborador() {
         herramienta: String(item.herramienta || '').trim(),
         marca: String(item.marca || '').trim(),
         cantidad: Number(item.cantidad || 1),
-        // preserve explicit estado or leave empty
         estado: item.estado !== undefined && item.estado !== null ? String(item.estado) : '',
         comentario: String(item.comentario || '').trim(),
         matchedItemId: item.matchedItemId ? String(item.matchedItemId) : null,
-        inspectorId: inspectorId,
-        inspectorNombre: inspectorNombre,
+        inspectorId,
+        inspectorNombre,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       }
@@ -191,14 +219,13 @@ export function useConteoColaborador() {
     loading.value = true
     error.value = null
     try {
-      // Attach inspectorId from parent conteo when updating so rules that check it succeed
       const conteoSnap = await getDoc(doc(db, COLLECTION_NAME, String(conteoId)))
       const conteoData = conteoSnap.exists() ? conteoSnap.data() : {}
       const inspectorId = conteoData?.inspectorId ? String(conteoData.inspectorId) : null
 
       const upd = {
         ...updates,
-        inspectorId: inspectorId,
+        inspectorId,
         updatedAt: new Date().toISOString()
       }
 
@@ -236,39 +263,29 @@ export function useConteoColaborador() {
 
       const scannedSnap = await getDocs(collection(db, COLLECTION_NAME, String(conteoId), 'scannedItems'))
       const scanned = scannedSnap.docs.map((d) => ({ id: d.id, ...d.data() }))
-
       const expected = conteo.expectedItems || []
 
-      // Organizar scanned por matchedItemId
       const scannedByMatched = {}
       const extras = []
       scanned.forEach((s) => {
         const q = Number(s.cantidad || 1)
-        if (s.matchedItemId) {
-          scannedByMatched[s.matchedItemId] = (scannedByMatched[s.matchedItemId] || 0) + q
-        } else {
-          extras.push(s)
-        }
+        if (s.matchedItemId) scannedByMatched[s.matchedItemId] = (scannedByMatched[s.matchedItemId] || 0) + q
+        else extras.push(s)
       })
-
-      console.debug('finalizeConteo:', { conteoId, expectedCount: expected.length, scannedCount: scanned.length, scannedByMatched })
 
       const batch = writeBatch(db)
       const now = new Date().toISOString()
 
-      // Ajustar items esperados
       for (const exp of expected) {
         const expectedQty = Number.parseInt(String(exp.cantidad || 1), 10) || 1
         const scannedQtyRaw = scannedByMatched[exp.id] || 0
         const scannedQty = Number.parseInt(String(scannedQtyRaw || 0), 10) || 0
         const invRef = doc(db, INVENTARIO_COLAB, String(exp.id))
 
-        // If not all expected items were scanned, block applying (business rule)
         if (scannedQty < expectedQty) {
           throw new Error('No todos los items esperados fueron escaneados. Imposible aplicar.')
         }
 
-        // If all scanned, take metadata from the scanned entries (pick the most recent scan)
         const matchingScans = scanned.filter((s) => String(s.matchedItemId) === String(exp.id))
         let chosenScan = null
         if (matchingScans.length > 0) {
@@ -279,39 +296,53 @@ export function useConteoColaborador() {
           }, matchingScans[0])
         }
 
-        const newEstado = chosenScan?.estado ? String(chosenScan.estado) : (scannedQty === 0 ? 'faltante' : scannedQty < expectedQty ? 'incompleto' : 'completo')
-        const payload = { cantidad: scannedQty, estado: newEstado, colaboradorId: conteo.colaboradorId, colaboradorNombre: conteo.colaboradorNombre, updatedAt: now }
+        let newEstado = chosenScan?.estado
+          ? String(chosenScan.estado)
+          : (scannedQty === 0 ? 'faltante' : scannedQty < expectedQty ? 'incompleto' : 'completo')
+
+        if (isReposicionPendiente(newEstado)) {
+          newEstado = ESTADO_REPOSICION_PENDIENTE
+        }
+
+        const payload = {
+          cantidad: scannedQty,
+          estado: newEstado,
+          colaboradorId: conteo.colaboradorId,
+          colaboradorNombre: conteo.colaboradorNombre,
+          updatedAt: now
+        }
 
         if (chosenScan) {
-          // Apply captured metadata when available, prefer scan data over stored expected values
           payload.herramienta = String(chosenScan.herramienta || exp.herramienta || '')
           payload.marca = String(chosenScan.marca || exp.marca || '')
           if (chosenScan.comentario) payload.comentario = String(chosenScan.comentario)
         } else {
-          // Fallback to expected metadata
           if (exp.herramienta) payload.herramienta = exp.herramienta
           if (exp.marca) payload.marca = exp.marca
           if (exp.comentario) payload.comentario = exp.comentario
         }
 
-        console.debug('finalizeConteo: batch.set expected', { invId: String(exp.id), payload })
         batch.set(invRef, payload, { merge: true })
       }
 
-      // Procesar extras: crear o actualizar
       for (const ex of extras) {
         const barcode = String(ex.barcode || '').trim()
         if (!barcode) continue
         const invRef = doc(db, INVENTARIO_COLAB, barcode)
         const snap = await getDoc(invRef)
         const q = Number.parseInt(String(ex.cantidad || 1), 10) || 1
+
         if (snap.exists()) {
           const prev = Number.parseInt(String(snap.data().cantidad || 0), 10) || 0
-          const payload = { cantidad: prev + q, colaboradorId: conteo.colaboradorId, colaboradorNombre: conteo.colaboradorNombre, updatedAt: now }
-          console.debug('finalizeConteo: batch.set extra existing', { invId: barcode, payload })
+          const payload = {
+            cantidad: prev + q,
+            colaboradorId: conteo.colaboradorId,
+            colaboradorNombre: conteo.colaboradorNombre,
+            updatedAt: now
+          }
           batch.set(invRef, payload, { merge: true })
         } else {
-          const payload = {
+          batch.set(invRef, {
             barcode,
             colaboradorId: conteo.colaboradorId,
             colaboradorNombre: conteo.colaboradorNombre,
@@ -322,22 +353,16 @@ export function useConteoColaborador() {
             activo: true,
             createdAt: now,
             updatedAt: now
-          }
-          console.debug('finalizeConteo: batch.set extra new', { invId: barcode, payload })
-          batch.set(invRef, payload)
+          })
         }
       }
 
-      // Commit batch (con logging de errores explícito)
-      try {
-        await batch.commit()
-      } catch (commitErr) {
-        console.error('finalizeConteo: batch.commit failed', commitErr)
-        throw commitErr
-      }
-
-      // Marcar conteo como aplicado
-      await updateDoc(doc(db, COLLECTION_NAME, String(conteoId)), { applied: true, finishedAt: now, updatedAt: now })
+      await batch.commit()
+      await updateDoc(doc(db, COLLECTION_NAME, String(conteoId)), {
+        applied: true,
+        finishedAt: now,
+        updatedAt: now
+      })
       await getConteoById(conteoId)
       return { success: true }
     } catch (err) {

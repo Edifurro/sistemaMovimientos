@@ -4,42 +4,33 @@ import { collection, doc, getDoc, getDocs, orderBy, query, setDoc, updateDoc } f
 import { deleteDoc } from 'firebase/firestore'
 
 const COLLECTION_NAME = 'inventario_colaboradores'
-const ESTADOS_VALIDOS = ['faltante', 'incompleto', 'completo']
+const ESTADO_REPOSICION_PENDIENTE = 'reposicion_pendiente'
+const ESTADOS_VALIDOS = ['faltante', 'incompleto', 'completo', ESTADO_REPOSICION_PENDIENTE]
 
 const inventarioColaboradores = ref([])
 const loading = ref(false)
 const error = ref(null)
 
-const normalizeText = (value) => {
-  return String(value ?? '')
-    .trim()
-    .toLowerCase()
-}
+const normalizeText = (value) => String(value ?? '').trim().toLowerCase()
 
 const normalizeEstado = (value) => {
   const normalized = normalizeText(value)
 
-  if (normalized.includes('falt')) {
-    return 'faltante'
-  }
+  if (
+    normalized === ESTADO_REPOSICION_PENDIENTE ||
+    normalized === 'reposicion pendiente' ||
+    normalized === 'reposición pendiente'
+  ) return ESTADO_REPOSICION_PENDIENTE
 
-  if (normalized.includes('incomp') || normalized.includes('parcial')) {
-    return 'incompleto'
-  }
-
-  if (ESTADOS_VALIDOS.includes(normalized)) {
-    return normalized
-  }
-
+  if (normalized.includes('falt')) return 'faltante'
+  if (normalized.includes('incomp') || normalized.includes('parcial')) return 'incompleto'
+  if (ESTADOS_VALIDOS.includes(normalized)) return normalized
   return 'completo'
 }
 
 const normalizeQuantity = (value, fallback = 1) => {
   const parsed = Number.parseInt(String(value ?? '').trim(), 10)
-  if (Number.isFinite(parsed) && parsed > 0) {
-    return parsed
-  }
-
+  if (Number.isFinite(parsed) && parsed > 0) return parsed
   const fallbackValue = Number.parseInt(String(fallback ?? 1).trim(), 10)
   return Number.isFinite(fallbackValue) && fallbackValue > 0 ? fallbackValue : 1
 }
@@ -47,39 +38,22 @@ const normalizeQuantity = (value, fallback = 1) => {
 const mapError = (err) => {
   const code = err?.code || ''
   const message = String(err?.message || '')
-
   if (
     code === 'permission-denied' ||
     message.includes('PERMISSION_DENIED') ||
     message.includes('Missing or insufficient permissions')
-  ) {
-    return 'No tienes permisos para gestionar el inventario de colaboradores.'
-  }
-
+  ) return 'No tienes permisos para gestionar el inventario de colaboradores.'
   return err?.message || 'Ocurrio un error al gestionar el inventario de colaboradores.'
 }
 
-// Para el inventario de colaboradores usamos códigos numéricos.
-// Generamos un número aleatorio de 7 dígitos como string.
-const buildBarcodeCandidate = () => {
-  return Math.floor(1000000 + Math.random() * 9000000).toString()
-}
+const buildBarcodeCandidate = () => Math.floor(1000000 + Math.random() * 9000000).toString()
 
 const isBarcodeAvailable = async (barcode, excludeId = '') => {
   const normalizedBarcode = String(barcode || '').trim()
-  if (!normalizedBarcode) {
-    return false
-  }
-
+  if (!normalizedBarcode) return false
   const snapshot = await getDoc(doc(db, COLLECTION_NAME, normalizedBarcode))
-  if (!snapshot.exists()) {
-    return true
-  }
-
-  if (!excludeId) {
-    return false
-  }
-
+  if (!snapshot.exists()) return true
+  if (!excludeId) return false
   return snapshot.id === excludeId
 }
 
@@ -88,21 +62,16 @@ const ensureUniqueBarcode = async (preferredBarcode = '', excludeId = '') => {
   if (normalizedPreferred && (await isBarcodeAvailable(normalizedPreferred, excludeId))) {
     return normalizedPreferred
   }
-
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const candidate = buildBarcodeCandidate()
-    if (await isBarcodeAvailable(candidate, excludeId)) {
-      return candidate
-    }
+    if (await isBarcodeAvailable(candidate, excludeId)) return candidate
   }
-
   throw new Error('No fue posible generar un codigo de barras unico.')
 }
 
 const buildPayload = async (data = {}, excludeId = '') => {
   const barcode = await ensureUniqueBarcode(data.barcode, excludeId)
   const fechaEntrega = String(data.fechaEntrega || '').trim()
-
   return {
     barcode,
     colaboradorId: String(data.colaboradorId || '').trim(),
@@ -121,55 +90,47 @@ const buildPayload = async (data = {}, excludeId = '') => {
   }
 }
 
-const sortByCreatedAtDesc = (rows = []) => {
-  return [...rows].sort((left, right) => {
-    const leftDate = new Date(left?.createdAt || 0).getTime()
-    const rightDate = new Date(right?.createdAt || 0).getTime()
-    return rightDate - leftDate
-  })
-}
+const sortByCreatedAtDesc = (rows = []) => [...rows].sort((left, right) => {
+  const leftDate = new Date(left?.createdAt || 0).getTime()
+  const rightDate = new Date(right?.createdAt || 0).getTime()
+  return rightDate - leftDate
+})
 
 export function useInventarioColaboradores() {
-  const getNextBarcode = async () => {
-    return ensureUniqueBarcode('')
-  }
+  const getNextBarcode = async () => ensureUniqueBarcode('')
 
   const getInventarioColaboradores = async (filters = {}) => {
     loading.value = true
     error.value = null
     try {
       const snapshot = await getDocs(query(collection(db, COLLECTION_NAME), orderBy('createdAt', 'desc')))
-      const rows = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))
+      const rows = snapshot.docs.map((item) => {
+        const data = item.data()
+        const rawEstado = normalizeText(data.estado)
+        return {
+          id: item.id,
+          ...data,
+          estado: rawEstado === 'cambio' ? ESTADO_REPOSICION_PENDIENTE : normalizeEstado(data.estado),
+          _legacyCambio: rawEstado === 'cambio'
+        }
+      })
+
+      const legacyRows = rows.filter((row) => row._legacyCambio)
+      await Promise.all(legacyRows.map((row) => updateDoc(doc(db, COLLECTION_NAME, row.id), {
+        estado: ESTADO_REPOSICION_PENDIENTE,
+        updatedAt: new Date().toISOString()
+      })))
+      rows.forEach((row) => { delete row._legacyCambio })
 
       const filtered = rows.filter((row) => {
-        if (filters.colaboradorId && row.colaboradorId !== filters.colaboradorId) {
-          return false
-        }
-
-        if (filters.estado && normalizeEstado(row.estado) !== normalizeEstado(filters.estado)) {
-          return false
-        }
-
+        if (filters.colaboradorId && row.colaboradorId !== filters.colaboradorId) return false
+        if (filters.estado && normalizeEstado(row.estado) !== normalizeEstado(filters.estado)) return false
         const searchText = String(filters.searchText || '').trim().toLowerCase()
-        if (!searchText) {
-          return true
-        }
-
+        if (!searchText) return true
         const blob = [
-          row.barcode,
-          row.colaboradorNombre,
-          row.codigoEmpleado,
-          row.herramienta,
-          row.marca,
-          row.cantidad,
-          row.descripcion,
-          row.estado,
-          row.comentario
-        ]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase()
-
+          row.barcode, row.colaboradorNombre, row.codigoEmpleado, row.herramienta,
+          row.marca, row.cantidad, row.descripcion, row.estado, row.comentario
+        ].filter(Boolean).join(' ').toLowerCase()
         return blob.includes(searchText)
       })
 
@@ -188,10 +149,9 @@ export function useInventarioColaboradores() {
     error.value = null
     try {
       const snapshot = await getDoc(doc(db, COLLECTION_NAME, id))
-      if (!snapshot.exists()) {
-        return null
-      }
-      return { id: snapshot.id, ...snapshot.data() }
+      if (!snapshot.exists()) return null
+      const data = snapshot.data()
+      return { id: snapshot.id, ...data, estado: normalizeEstado(data.estado) }
     } catch (err) {
       error.value = mapError(err)
       throw err
@@ -275,10 +235,7 @@ export function useInventarioColaboradores() {
           continue
         }
 
-        if (!barcode) {
-          barcode = await ensureUniqueBarcode('')
-        }
-
+        if (!barcode) barcode = await ensureUniqueBarcode('')
         if (seenBarcodes.has(barcode)) {
           skipped += 1
           if (typeof progressCb === 'function') {
@@ -291,7 +248,9 @@ export function useInventarioColaboradores() {
         const payload = await buildPayload({ ...row, barcode }, barcode)
         const docRef = doc(db, COLLECTION_NAME, payload.barcode)
         const snapshot = await getDoc(docRef)
-        const createdAt = snapshot.exists() ? snapshot.data().createdAt || new Date().toISOString() : new Date().toISOString()
+        const createdAt = snapshot.exists()
+          ? snapshot.data().createdAt || new Date().toISOString()
+          : new Date().toISOString()
 
         await setDoc(docRef, {
           ...payload,
@@ -300,17 +259,13 @@ export function useInventarioColaboradores() {
           activo: true
         })
 
-        if (snapshot.exists()) {
-          updated += 1
-        } else {
-          created += 1
-        }
+        if (snapshot.exists()) updated += 1
+        else created += 1
 
         if (typeof progressCb === 'function') {
           try { progressCb({ index: i, total: rows.length, created, updated, skipped }) } catch (e) {}
         }
       }
-
       return { created, updated, skipped }
     } catch (err) {
       error.value = mapError(err)
@@ -329,8 +284,7 @@ export function useInventarioColaboradores() {
     getInventarioColaboradorById,
     createInventarioColaborador,
     updateInventarioColaborador,
-    upsertInventarioDesdeExcel
-    ,
+    upsertInventarioDesdeExcel,
     deleteInventarioColaborador
   }
 }

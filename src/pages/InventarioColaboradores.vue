@@ -78,6 +78,10 @@
             <span class="overview-label">Faltante</span>
             <strong>{{ missingCount }}</strong>
           </article>
+          <article class="overview-card overview-card--warning">
+            <span class="overview-label">Reposición pendiente</span>
+            <strong>{{ replacementPendingCount }}</strong>
+          </article>
         </section>
 
         <section class="toolbar-card">
@@ -124,6 +128,9 @@
             </ion-segment-button>
             <ion-segment-button value="faltante">
               <ion-label>Faltante</ion-label>
+            </ion-segment-button>
+            <ion-segment-button value="reposicion_pendiente">
+              <ion-label>Reposición pendiente</ion-label>
             </ion-segment-button>
           </ion-segment>
 
@@ -321,6 +328,7 @@
                   <ion-select-option value="completo">Completo</ion-select-option>
                   <ion-select-option value="incompleto">Incompleto</ion-select-option>
                   <ion-select-option value="faltante">Faltante</ion-select-option>
+                  <ion-select-option value="reposicion_pendiente">Reposición pendiente</ion-select-option>
                 </ion-select>
               </ion-item>
 
@@ -674,6 +682,12 @@ const totalCount = computed(() => inventarioPorColaborador.value.length)
 const completeCount = computed(() => inventarioPorColaborador.value.filter((item) => String(item.estado || '').toLowerCase() === 'completo').length)
 const incompleteCount = computed(() => inventarioPorColaborador.value.filter((item) => String(item.estado || '').toLowerCase() === 'incompleto').length)
 const missingCount = computed(() => inventarioPorColaborador.value.filter((item) => String(item.estado || '').toLowerCase() === 'faltante').length)
+const replacementPendingCount = computed(() => inventarioPorColaborador.value.filter((item) => {
+  const estado = String(item.estado || '').trim().toLowerCase()
+  return estado === 'reposicion_pendiente' ||
+    estado === 'reposicion pendiente' ||
+    estado === 'reposición pendiente'
+}).length)
 
 const showFeedback = async (message, color = 'success') => {
   toastMessage.value = message
@@ -1053,6 +1067,7 @@ const resetTsplPrinter = async () => {
 
 const getEstadoClass = (estado) => {
   const normalized = String(estado || '').toLowerCase()
+  if (normalized === 'reposicion_pendiente' || normalized === 'reposicion pendiente' || normalized === 'reposición pendiente') return 'inventory-row--replacement'
   if (normalized === 'faltante') return 'inventory-row--missing'
   if (normalized === 'incompleto') return 'inventory-row--incomplete'
   return 'inventory-row--complete'
@@ -1282,6 +1297,7 @@ const getEstadoColor = (estado) => {
 
 const getEstadoLabel = (estado) => {
   const normalized = String(estado || '').toLowerCase()
+  if (normalized === 'reposicion_pendiente' || normalized === 'reposicion pendiente' || normalized === 'reposición pendiente') return 'Reposición pendiente'
   if (normalized === 'faltante') return 'Faltante'
   if (normalized === 'incompleto') return 'Incompleto'
   return 'Completo'
@@ -1289,6 +1305,7 @@ const getEstadoLabel = (estado) => {
 
 const getEstadoBadgeClass = (estado) => {
   const normalized = String(estado || '').toLowerCase()
+  if (normalized === 'reposicion_pendiente' || normalized === 'reposicion pendiente' || normalized === 'reposición pendiente') return 'inventory-badge--replacement'
   if (normalized === 'faltante') return 'inventory-badge--missing'
   if (normalized === 'incompleto') return 'inventory-badge--incomplete'
   return 'inventory-badge--complete'
@@ -1702,6 +1719,11 @@ onBeforeRouteLeave(() => {
   border-color: #fecaca;
 }
 
+.overview-card--info {
+  background: #ecfeff;
+  border-color: #a5f3fc;
+}
+
 .overview-label {
   display: block;
   color: #64748b;
@@ -1864,6 +1886,10 @@ onBeforeRouteLeave(() => {
   border-left-color: #fca5a5;
 }
 
+.inventory-row--replacement .inventory-card-content {
+  border-left-color: #f59e0b;
+}
+
 .inventory-topline {
   display: flex;
   justify-content: space-between;
@@ -1927,6 +1953,12 @@ onBeforeRouteLeave(() => {
   color: #b91c1c;
   background: #fef2f2;
   border-color: #fecaca;
+}
+
+.inventory-badge--replacement {
+  color: #92400e;
+  background: #fff7ed;
+  border-color: #fed7aa;
 }
 
 .inventory-metric-grid {
